@@ -1,8 +1,12 @@
 package de.htwg.softwarearchitecture.almachess.View
 
 import de.htwg.softwarearchitecture.almachess.Model.{Board, Piece}
+import de.htwg.softwarearchitecture.almachess.util.{Observer, GameEvent}
+import de.htwg.softwarearchitecture.almachess.Control.Controller
 
-object Tui:
+val controller = new Controller()
+
+object Tui extends Observer:
   def printBoard(board: Board): Unit =
     println("  | a b c d e f g h")
     println(board.toAscii)
@@ -11,6 +15,7 @@ object Tui:
     print("> "); scala.io.StdIn.readLine().trim
 
   def run(): Unit =
+    controller.add(this)
     println("=== AlmaChess TUI ===")
     var board = Board.initial
     printBoard(board)
@@ -31,3 +36,8 @@ object Tui:
           else println("usage: move [target] [destination]")
         case other =>
           println(s"unknown command: '$other' (use `move e2 e4` or `quit`)")
+  
+  def update(e: GameEvent): Unit =
+    e match
+      case GameEvent.kingCaptured =>
+        println(s"Game over! King captured.")

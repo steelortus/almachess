@@ -1,6 +1,8 @@
 package de.htwg.softwarearchitecture.almachess.Model
 
-case class Board(squares: Vector[Vector[Option[Piece]]]):
+import de.htwg.softwarearchitecture.almachess.util.{Observable, GameEvent}
+
+case class Board(squares: Vector[Vector[Option[Piece]]]) extends Observable:
   require(squares.length == 8 && squares.forall(_.length == 8))
 
   def pieceAt(rank: Int, file: Int): Option[Piece] = squares(rank)(file)
