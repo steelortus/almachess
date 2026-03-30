@@ -1,43 +1,57 @@
-package de.htwg.softwarearchitecture.almachess.View
+package de.htwg.softwarearchitecture.almachess.view
 
-import de.htwg.softwarearchitecture.almachess.Model.{Board, Piece}
-import de.htwg.softwarearchitecture.almachess.util.{Observer, GameEvent}
-import de.htwg.softwarearchitecture.almachess.Control.Controller
+import de.htwg.softwarearchitecture.almachess.control.Controller
+import scala.io.StdIn.readLine
 
-val controller = new Controller()
-
-object Tui extends Observer:
-  def printBoard(board: Board): Unit =
-    println("  | a b c d e f g h")
-    println(board.toAscii)
-
-  private def prompt(): String =
-    print("> "); scala.io.StdIn.readLine().trim
+class Tui(controller: Controller):
 
   def run(): Unit =
-    controller.add(this)
-    println("=== AlmaChess TUI ===")
-    var board = Board.initial
-    printBoard(board)
+    println("AlmaChess TUI")
+    println("Befehle:")
+    println("  move e2 e4")
+    println("  fen")
+    println("  load <fen>")
+    println("  show")
+    println("  exit")
 
     var running = true
     while running do
-      prompt() match
-        case "quit" | "exit" => running = false; println("Quitting application...")
-        case cmd if cmd.startsWith("move ") =>
-          val pieces = cmd.stripPrefix("move ").split("\\s+")
-          if pieces.length == 2 then
-            board.move(pieces(0), pieces(1)) match
-              case Right(next) =>
-                board = next
-                printBoard(board)
-              case Left(err) =>
-                println(s"[error] $err")
-          else println("usage: move [target] [destination]")
+      println()
+      println(controller.ascii)
+      readLine("> ") match
+        case null =>
+          running = false
+
+        case line if line.trim == "exit" =>
+          running = false
+
+        case line if line.trim == "show" =>
+          println(controller.ascii)
+
+        case line if line.trim == "fen" =>
+          println(controller.toFen)
+
+        case line if line.trim.startsWith("load ") =>
+          val fen = line.trim.stripPrefix("load ").trim
+          controller.loadFen(fen) match
+            case Left(err)  => println(s"[error] $err")
+            case Right(msg) => println(msg)
+
+        case line if line.trim.startsWith("move ") =>
+          val parts = line.trim.split("\\s+").toList
+          parts match
+            case "move" :: from :: to :: Nil =>
+              controller.move(from, to) match
+                case Left(err)  => println(s"[error] $err")
+                case Right(msg) => println(msg)
+            case "move" :: from :: to :: promo :: Nil =>
+              controller.move(from, to, Some(promo)) match
+                case Left(err)  => println(s"[error] $err")
+                case Right(msg) => println(msg)
+            case _ =>
+              println("[error] usage: move <from> <to> [promotion]")
+
         case other =>
-          println(s"unknown command: '$other' (use `move e2 e4` or `quit`)")
-  
-  def update(e: GameEvent): Unit =
-    e match
-      case GameEvent.kingCaptured =>
-        println(s"Game over! King captured.")
+          println(s"[error] unknown command: $other")
+
+          // start tui sbt "runMain de.htwg.softwarearchitecture.almachess.CliMain"

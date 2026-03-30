@@ -1,12 +1,12 @@
-val scala3Version = "3.8.2"
+ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / scalaVersion := "3.3.1"
 
-lazy val root = project
-  .in(file("."))
+lazy val root = (project in file("."))
   .settings(
     name := "AlmaChess",
-    version := "0.1.0-SNAPSHOT",
-
-    scalaVersion := scala3Version,
-
-    libraryDependencies += "org.scalameta" %% "munit" % "1.2.4" % Test
+    libraryDependencies ++= Seq(
+      "org.scala-lang.modules" %% "scala-swing" % "3.0.0"
+    ),
+    Compile / run / fork := true,
+    Compile / run / connectInput := true
   )
