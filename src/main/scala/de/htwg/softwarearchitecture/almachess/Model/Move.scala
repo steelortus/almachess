@@ -10,17 +10,18 @@ object Move:
   def parse(input: String): Either[String, Move] =
     val trimmed = input.trim
     if trimmed.length < 4 then Left("move must look like e2e4 or e7e8q")
+    else if trimmed.length > 5 then Left("move too long")
     else
       val from = Pos.fromAlgebraic(trimmed.take(2))
       val to = Pos.fromAlgebraic(trimmed.slice(2, 4))
       val promo =
-        if trimmed.length >= 5 then
+        if trimmed.length == 5 then
           trimmed(4).toLower match
             case 'q' => Some(PieceType.Queen)
             case 'r' => Some(PieceType.Rook)
             case 'b' => Some(PieceType.Bishop)
             case 'n' => Some(PieceType.Knight)
-            case _   => None
+            case _   => return Left(s"invalid promotion: ${trimmed(4)}")
         else None
       (from, to) match
         case (Some(f), Some(t)) => Right(Move(f, t, promo))

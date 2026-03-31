@@ -5,7 +5,8 @@ lazy val root = (project in file("."))
   .settings(
     name := "AlmaChess",
     libraryDependencies ++= Seq(
-      "org.scala-lang.modules" %% "scala-swing" % "3.0.0"
+      "org.scala-lang.modules" %% "scala-swing" % "3.0.0",
+      "org.scalatest" %% "scalatest" % "3.2.17" % Test
     ),
     Compile / run / fork := true,
     Compile / run / connectInput := true
