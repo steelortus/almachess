@@ -11,9 +11,7 @@ case class Board(squares: Vector[Vector[Option[Piece]]]):
 
   def map(f: Option[Piece] => Option[Piece]): Board =
     Board(squares.map(_.map(f)))
-
   def flatMap(f: Board => Board): Board = f(this)
-
   def foreach(f: Option[Piece] => Unit): Unit =
     squares.flatten.foreach(f)
 

@@ -9,9 +9,7 @@ case class Pos(rank: Int, file: Int):
     s"${('a' + file).toChar}${('1' + rank).toChar}"
 
   def map(f: Int => Int): Pos = Pos(f(rank), f(file))
-
   def flatMap(f: Pos => Pos): Pos = f(this)
-
   def foreach(f: Int => Unit): Unit =
     f(rank)
     f(file)

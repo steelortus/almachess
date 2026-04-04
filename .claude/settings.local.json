@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sbt compile:*)",
+      "Bash(cmd /c \"cd /d \\\\\"c:\\\\Users\\\\leo11\\\\OneDrive\\\\Desktop\\\\HTWG\\\\AIN\\\\Semester6\\\\SoftwareArchitektur\\\\almachess\\\\\" && sbt compile 2>&1\")",
+      "Bash(cmd /c \"cd /d \\\\\"c:\\\\Users\\\\leo11\\\\OneDrive\\\\Desktop\\\\HTWG\\\\AIN\\\\Semester6\\\\SoftwareArchitektur\\\\almachess\\\\\" && sbt compile\")"
+    ]
+  }
+}
