@@ -8,7 +8,7 @@ import scala.swing.event.{ButtonClicked, MouseDragged, MousePressed, MouseReleas
 import java.awt.{AlphaComposite, Color as AwtColor, Font, Graphics2D, RenderingHints}
 import java.io.{File, PrintWriter}
 import java.nio.file.Files
-import javax.swing.{BorderFactory, JFileChooser, UIManager}
+import javax.swing.{BorderFactory, JFileChooser, SwingWorker, UIManager}
 import javax.swing.filechooser.FileNameExtensionFilter
 import javax.swing.plaf.ColorUIResource
 
@@ -63,6 +63,13 @@ class Gui(controller: Controller) extends MainFrame:
       "PopupMenu.background"          -> C_BG2,
       "MenuItem.background"           -> C_BG2,
       "MenuItem.foreground"           -> C_TEXT,
+      "MenuItem.selectionBackground"  -> C_SEL_BG,
+      "MenuItem.selectionForeground"  -> C_SEL_FG,
+      "MenuBar.background"            -> C_BG2,
+      "Menu.background"               -> C_BG2,
+      "Menu.foreground"               -> C_TEXT,
+      "Menu.selectionBackground"      -> C_SEL_BG,
+      "Menu.selectionForeground"      -> C_SEL_FG,
     )
     pairs.foreach { case (k, c) =>
       UIManager.put(k, new ColorUIResource(c.getRed, c.getGreen, c.getBlue))
@@ -113,18 +120,37 @@ class Gui(controller: Controller) extends MainFrame:
   private val loadJsonButton = mkButton("JSON laden")
   private val saveJsonButton = mkButton("JSON speichern")
 
+  // ── AI thinking state ────────────────────────────────────────────────────
+  private var aiThinking = false
+
+  private def triggerAiMove(): Unit =
+    if controller.isAiTurn && !aiThinking then
+      aiThinking = true
+      setStatus("KI denkt…")
+      val worker = new SwingWorker[Either[String, Unit], Unit]:
+        override def doInBackground(): Either[String, Unit] = controller.aiMove()
+        override def done(): Unit =
+          aiThinking = false
+          try get() match
+            case Left(err) => setStatus(s"KI Fehler: $err", isError = true)
+            case Right(_)  =>
+              refreshUi()
+              if controller.isGameOver then showGameOverDialog(controller.state.status)
+          catch case e: Exception => setStatus(s"KI Fehler: ${e.getMessage}", isError = true)
+      worker.execute()
+
   // ── refreshUi ─────────────────────────────────────────────────────────────
   private def refreshUi(): Unit =
-    fenField.text      = controller.toFen
-    statusLabel.text   = controller.state.status
+    fenField.text          = controller.toFen
+    statusLabel.text       = controller.state.status
     statusLabel.foreground = C_TEXT
-    undoButton.enabled = controller.canUndo
-    redoButton.enabled = controller.canRedo
-    pgnArea.text       = controller.exportPgn()
+    undoButton.enabled     = controller.canUndo && !aiThinking
+    redoButton.enabled     = controller.canRedo && !aiThinking
+    pgnArea.text           = controller.exportPgn()
     boardPanel.repaint()
 
   private def setStatus(msg: String, isError: Boolean = false): Unit =
-    statusLabel.text      = msg
+    statusLabel.text       = msg
     statusLabel.foreground = if isError then C_ERR else C_TEXT
 
   // ── Chess board panel ─────────────────────────────────────────────────────
@@ -143,11 +169,12 @@ class Gui(controller: Controller) extends MainFrame:
 
     reactions += {
       case e: MousePressed =>
-        if !controller.isGameOver then
+        if !controller.isGameOver && !aiThinking then
           requestFocus()
           squareAt(e.point.x, e.point.y).foreach { pos =>
             controller.state.board.pieceAt(pos) match
-              case Some(piece) if piece.color == controller.state.turn =>
+              case Some(piece) if piece.color == controller.state.turn
+                               && !controller.isAiTurn =>
                 draggingFrom  = Some(pos)
                 draggingPiece = Some(piece)
                 dragMouseX    = e.point.x
@@ -174,6 +201,7 @@ class Gui(controller: Controller) extends MainFrame:
               case Right(_)  =>
                 refreshUi()
                 if controller.isGameOver then showGameOverDialog(controller.state.status)
+                else triggerAiMove()
           case _ =>
         draggingFrom  = None
         draggingPiece = None
@@ -355,6 +383,60 @@ class Gui(controller: Controller) extends MainFrame:
   title         = "AlmaChess"
   preferredSize = new Dimension(1040, 760)
 
+  // ── Menüleiste ────────────────────────────────────────────────────────────
+  private var selectedDepth = 3
+
+  menuBar = new MenuBar:
+    background = C_BG2
+
+    // Spiel-Menü
+    contents += new Menu("Spiel"):
+      background = C_BG2
+      foreground = C_TEXT
+
+      contents += new MenuItem(Action("Mensch vs Mensch") {
+        controller.disableAi()
+        refreshUi()
+        setStatus("Mensch vs Mensch")
+      }):
+        background = C_BG2; foreground = C_TEXT
+
+      contents += new Separator
+
+      contents += new MenuItem(Action("Mensch vs KI  (KI spielt Schwarz)") {
+        controller.reset()
+        controller.enableAi(Color.Black, selectedDepth)
+        refreshUi()
+        setStatus(s"Mensch vs KI (Schwarz) – Tiefe $selectedDepth")
+      }):
+        background = C_BG2; foreground = C_TEXT
+
+      contents += new MenuItem(Action("Mensch vs KI  (KI spielt Weiß)") {
+        controller.reset()
+        controller.enableAi(Color.White, selectedDepth)
+        refreshUi()
+        setStatus(s"Mensch vs KI (Weiß) – Tiefe $selectedDepth")
+        triggerAiMove()
+      }):
+        background = C_BG2; foreground = C_TEXT
+
+    // KI-Stärke-Menü
+    contents += new Menu("KI-Stärke"):
+      background = C_BG2
+      foreground = C_TEXT
+
+      def depthItem(label: String, depth: Int) =
+        new MenuItem(Action(label) {
+          selectedDepth = depth
+          controller.setAiDepth(depth)
+          setStatus(s"KI-Stärke: $label")
+        }):
+          background = C_BG2; foreground = C_TEXT
+
+      contents += depthItem("Leicht  (Tiefe 1)", 1)
+      contents += depthItem("Normal  (Tiefe 3)", 3)
+      contents += depthItem("Stark   (Tiefe 4)", 4)
+
   contents = new BorderPanel:
     background = C_BG
     layout(boardPanel)   = BorderPanel.Position.Center
@@ -379,19 +461,26 @@ class Gui(controller: Controller) extends MainFrame:
           if controller.isGameOver then showGameOverDialog(controller.state.status)
 
     case ButtonClicked(`resetButton`) =>
+      val savedAi    = controller.aiMode
+      val savedDepth = controller.currentAiDepth
       controller.reset()
+      savedAi.foreach(c => controller.enableAi(c, savedDepth))
       refreshUi()
       setStatus("Spiel zurückgesetzt.")
+      if controller.isAiTurn then triggerAiMove()
 
     case ButtonClicked(`undoButton`) =>
-      controller.undo() match
-        case Left(err) => setStatus(s"Fehler: $err", isError = true)
-        case Right(_)  => refreshUi()
+      // Undo twice when playing against AI (undo AI move + own move)
+      controller.undo()
+      if controller.isAiTurn then controller.undo()
+      refreshUi()
 
     case ButtonClicked(`redoButton`) =>
       controller.redo() match
         case Left(err) => setStatus(s"Fehler: $err", isError = true)
-        case Right(_)  => refreshUi()
+        case Right(_)  =>
+          refreshUi()
+          if controller.isAiTurn then triggerAiMove()
 
     // PGN: load from text area (paste & load)
     case ButtonClicked(`loadPgnButton`) =>

@@ -3,6 +3,7 @@ package de.htwg.softwarearchitecture.almachess.control
 import de.htwg.softwarearchitecture.almachess.model.*
 import de.htwg.softwarearchitecture.almachess.parser.{FenParser, PgnParser}
 import de.htwg.softwarearchitecture.almachess.io.JsonIO
+import de.htwg.softwarearchitecture.almachess.ai.ChessAI
 import de.htwg.softwarearchitecture.almachess.util.*
 
 class Controller(private var currentState: GameState = GameState.initial) extends Observable:
@@ -23,6 +24,33 @@ class Controller(private var currentState: GameState = GameState.initial) extend
     "Black"  -> "Black",
     "Result" -> "*"
   )
+
+  // --- AI ---
+  private var aiColor: Option[Color] = None
+  private var aiDepth: Int           = 3
+
+  def enableAi(color: Color, depth: Int = 3): Unit =
+    aiColor = Some(color)
+    aiDepth = depth
+
+  def disableAi(): Unit =
+    aiColor = None
+
+  def setAiDepth(d: Int): Unit =
+    aiDepth = d
+
+  /** True when it is the AI's turn and the game is still running. */
+  def isAiTurn: Boolean =
+    aiColor.contains(currentState.turn) && !isGameOver
+
+  def aiMode: Option[Color] = aiColor
+  def currentAiDepth: Int   = aiDepth
+
+  /** Let the AI pick and play its move. Should be called from a background thread. */
+  def aiMove(): Either[String, Unit] =
+    ChessAI.bestMove(currentState, aiDepth) match
+      case None    => Left("KI hat keinen Zug gefunden")
+      case Some(m) => move(m)
 
   // --- Public state accessors ---
 
