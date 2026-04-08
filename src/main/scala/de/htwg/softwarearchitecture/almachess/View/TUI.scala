@@ -1,6 +1,8 @@
 package de.htwg.softwarearchitecture.almachess.view
 
 import de.htwg.softwarearchitecture.almachess.control.Controller
+import de.htwg.softwarearchitecture.almachess.parser.{Command, CommandParser}
+import de.htwg.softwarearchitecture.almachess.model.Color
 import scala.io.StdIn.readLine
 import java.io.{File, PrintWriter}
 import java.nio.file.Files
@@ -8,93 +10,113 @@ import java.nio.file.Files
 class Tui(controller: Controller):
 
   def run(): Unit =
-    println("AlmaChess TUI")
-    println("Befehle:")
-    println("  move e2 e4")
-    println("  undo | redo")
-    println("  fen | show")
-    println("  load <fen>")
-    println("  pgn")
-    println("  export pgn <datei>  |  import pgn <datei>")
-    println("  export json <datei> |  import json <datei>")
-    println("  exit")
+    printHelp()
 
     var running = true
     while running do
       println()
       println(controller.ascii)
       readLine("> ") match
-        case null =>
-          running = false
-
-        case line if line.trim == "exit" =>
-          running = false
-
-        case line if line.trim == "show" =>
-          println(controller.ascii)
-
-        case line if line.trim == "fen" =>
-          println(controller.toFen)
-
-        case line if line.trim == "pgn" =>
-          println(controller.exportPgn())
-
-        case line if line.trim == "undo" =>
-          controller.undo() match
+        case null                      => running = false
+        case line if line.trim.isEmpty => ()
+        case line =>
+          CommandParser.parse(line) match
             case Left(err)  => println(s"[error] $err")
-            case Right(_)   => println(s"[ok] ${controller.state.status}")
+            case Right(cmd) => running = execute(cmd)
 
-        case line if line.trim == "redo" =>
-          controller.redo() match
-            case Left(err)  => println(s"[error] $err")
-            case Right(_)   => println(s"[ok] ${controller.state.status}")
+  /** Dispatches a parsed command. Returns false to stop the REPL. */
+  private def execute(cmd: Command): Boolean =
+    cmd match
+      case Command.Exit => false
 
-        case line if line.trim.startsWith("load ") =>
-          val fen = line.trim.stripPrefix("load ").trim
-          controller.loadFen(fen) match
-            case Left(err)  => println(s"[error] $err")
-            case Right(msg) => println(msg)
+      case Command.Help =>
+        printHelp(); true
 
-        case line if line.trim.startsWith("move ") =>
-          val parts = line.trim.split("\\s+").toList
-          parts match
-            case "move" :: from :: to :: Nil =>
-              controller.move(from, to) match
-                case Left(err)  => println(s"[error] $err")
-                case Right(msg) => println(msg)
-            case "move" :: from :: to :: promo :: Nil =>
-              controller.move(from, to, Some(promo)) match
-                case Left(err)  => println(s"[error] $err")
-                case Right(msg) => println(msg)
-            case _ =>
-              println("[error] usage: move <from> <to> [promotion]")
+      case Command.Show =>
+        println(controller.ascii); true
 
-        case line if line.trim.startsWith("export pgn ") =>
-          val path = line.trim.stripPrefix("export pgn ").trim
-          writeFile(path, controller.exportPgn()) match
-            case Left(err)  => println(s"[error] $err")
-            case Right(())  => println(s"[ok] PGN gespeichert: $path")
+      case Command.ShowFen =>
+        println(controller.toFen); true
 
-        case line if line.trim.startsWith("import pgn ") =>
-          val path = line.trim.stripPrefix("import pgn ").trim
-          readFile(path).flatMap(controller.importPgn) match
-            case Left(err)  => println(s"[error] $err")
-            case Right(msg) => println(s"[ok] $msg")
+      case Command.ShowPgn =>
+        println(controller.exportPgn()); true
 
-        case line if line.trim.startsWith("export json ") =>
-          val path = line.trim.stripPrefix("export json ").trim
-          writeFile(path, controller.exportJson()) match
-            case Left(err)  => println(s"[error] $err")
-            case Right(())  => println(s"[ok] JSON gespeichert: $path")
+      case Command.Undo =>
+        controller.undo() match
+          case Left(err) => println(s"[error] $err")
+          case Right(_)  => println(s"[ok] ${controller.state.status}")
+        true
 
-        case line if line.trim.startsWith("import json ") =>
-          val path = line.trim.stripPrefix("import json ").trim
-          readFile(path).flatMap(controller.importJson) match
-            case Left(err)  => println(s"[error] $err")
-            case Right(msg) => println(s"[ok] $msg")
+      case Command.Redo =>
+        controller.redo() match
+          case Left(err) => println(s"[error] $err")
+          case Right(_)  => println(s"[ok] ${controller.state.status}")
+        true
 
-        case other =>
-          println(s"[error] unknown command: $other")
+      case Command.MoveCmd(from, to, promo) =>
+        controller.move(from, to, promo) match
+          case Left(err)  => println(s"[error] $err")
+          case Right(msg) => println(msg)
+        true
+
+      case Command.LoadFen(fen) =>
+        controller.loadFen(fen) match
+          case Left(err)  => println(s"[error] $err")
+          case Right(msg) => println(msg)
+        true
+
+      case Command.ExportPgn(path) =>
+        writeFile(path, controller.exportPgn()) match
+          case Left(err) => println(s"[error] $err")
+          case Right(()) => println(s"[ok] PGN gespeichert: $path")
+        true
+
+      case Command.ImportPgn(path) =>
+        readFile(path).flatMap(controller.importPgn) match
+          case Left(err)  => println(s"[error] $err")
+          case Right(msg) => println(s"[ok] $msg")
+        true
+
+      case Command.ExportJson(path) =>
+        writeFile(path, controller.exportJson()) match
+          case Left(err) => println(s"[error] $err")
+          case Right(()) => println(s"[ok] JSON gespeichert: $path")
+        true
+
+      case Command.ImportJson(path) =>
+        readFile(path).flatMap(controller.importJson) match
+          case Left(err)  => println(s"[error] $err")
+          case Right(msg) => println(s"[ok] $msg")
+        true
+
+      case Command.SetAiDepth(d) =>
+        controller.setAiDepth(d)
+        println(s"[ok] AI depth set to $d")
+        true
+
+      case Command.EnableAi(colorStr) =>
+        val c = if colorStr == "white" then Color.White else Color.Black
+        controller.enableAi(c, controller.currentAiDepth)
+        println(s"[ok] AI enabled for $colorStr (depth ${controller.currentAiDepth})")
+        true
+
+      case Command.DisableAi =>
+        controller.disableAi()
+        println("[ok] AI disabled")
+        true
+
+  private def printHelp(): Unit =
+    println("AlmaChess TUI")
+    println("Befehle:")
+    println("  move <from> <to> [<promo>]   e.g. move e2 e4, move e7 e8 q")
+    println("  undo | redo")
+    println("  show | fen | pgn")
+    println("  load [fen] <FEN>")
+    println("  export pgn <datei>  |  import pgn <datei>")
+    println("  export json <datei> |  import json <datei>")
+    println("  set ai depth <n>")
+    println("  ai on white | ai on black | ai off")
+    println("  help | exit")
 
   private def writeFile(path: String, content: String): Either[String, Unit] =
     try
