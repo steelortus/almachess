@@ -1,10 +1,7 @@
 ## AlMaChess
 
-Testing out AI Code-generation for class "Software Architekturen"
+Testing out AI code generation for class "Software Architekturen"
 
 #### TODO
-Board oder Felder als Monade auf einem anderen Branch inplementieren
-GUI
-Tests auf WordSpec
-FEN Parser
-Monaden
+REST API with HTTP4S
+    - Already partially implemented with PGN, although trying to test the import with curl doesn't seem to work yet, not sure if it's because of me using curl wrong or if the actual code is wrong
