@@ -4,6 +4,7 @@ import org.http4s.{HttpRoutes, QueryParamDecoder}
 import org.http4s.dsl.io.*
 import org.http4s.circe.CirceEntityCodec.*
 import cats.effect.IO
+import cats.syntax.semigroupk.toSemigroupKOps
 import de.htwg.softwarearchitecture.almachess.control.Controller
 
 object routes:
@@ -25,5 +26,23 @@ object routes:
       }
   }
 
+  def fenRoutes(controller: Controller): HttpRoutes[IO] = HttpRoutes.of[IO] {
+    case GET -> Root / "api" / "fen" / "export" =>
+      val fen = controller.toFen
+      Ok(FenResponse(fen))
+
+    case req @ POST -> Root / "api" / "fen" / "load" =>
+      req.as[FenLoadRequest].attempt.flatMap {
+        case Left(err) =>
+          BadRequest(ErrorResponse(s"Invalid request body: ${err.getMessage}"))
+        case Right(loadReq) =>
+          controller.loadFen(loadReq.fen) match
+            case Left(err) => 
+              BadRequest(ErrorResponse(err))
+            case Right(msg) => 
+              Ok(SuccessResponse(msg, Some(controller.toFen)))
+      }
+  }
+
   def allRoutes(controller: Controller): HttpRoutes[IO] =
-    pgnRoutes(controller)
+    pgnRoutes(controller) <+> fenRoutes(controller)
