@@ -1,0 +1,303 @@
+================================================================
+  AlmaChess – Spickzettel zum Testen der REST-API (PowerShell)
+================================================================
+
+Alle Tests nutzen PowerShell-native Invoke-RestMethod, weil curl.exe
+unter PowerShell Quoting-Probleme mit Leerzeichen/Anfuehrungszeichen
+im JSON-Body hat.
+
+----------------------------------------------------------------
+ A0) SERVICES STARTEN VIA DOCKER COMPOSE  (empfohlen)
+----------------------------------------------------------------
+
+# Baut das gemeinsame Image einmal, startet alle drei Services plus
+# ein nginx-Frontend. depends_on mit condition: service_healthy sorgt
+# dafuer, dass die API erst hochkommt, wenn NotationService und
+# AiService /health mit 200 antworten.
+
+docker compose up --build          # Vordergrund, mit Logs
+docker compose up -d --build       # Hintergrund
+docker compose ps                  # Status + Healthchecks
+docker compose logs -f almachess-api
+docker compose down                # Stoppen & entfernen
+
+# Erreichbar:
+#   http://localhost:8080   Main-API
+#   http://localhost:8081   NotationService
+#   http://localhost:8082   AiService
+#   http://localhost:8079   Web-Frontend (nginx proxied /api, /notation, /ai)
+
+
+----------------------------------------------------------------
+ A) SERVICES STARTEN  (drei separate PowerShell-Fenster, ohne Docker)
+----------------------------------------------------------------
+
+# Fenster 1 – NotationService auf Port 8081
+#   validiert FEN und parst PGN als eigenstaendiger Microservice
+sbt "runMain de.htwg.softwarearchitecture.almachess.services.NotationService"
+
+# Fenster 2 – AiService auf Port 8082
+#   berechnet den besten Zug aus einer FEN-Stellung
+sbt "runMain de.htwg.softwarearchitecture.almachess.services.AiService"
+
+# Fenster 3 – Main-API auf Port 8080 (nutzt die beiden Services via HTTP)
+$env:ALMACHESS_AI_URL="http://localhost:8082"
+$env:ALMACHESS_NOTATION_URL="http://localhost:8081"
+sbt "runMain de.htwg.softwarearchitecture.almachess.api.Server"
+
+# Alternative (Monolith-Modus, ohne Remote-Services):
+#   Env-Vars weglassen -> Main-API nutzt lokale Clients
+Remove-Item Env:ALMACHESS_AI_URL -ErrorAction SilentlyContinue
+Remove-Item Env:ALMACHESS_NOTATION_URL -ErrorAction SilentlyContinue
+sbt "runMain de.htwg.softwarearchitecture.almachess.api.Server"
+
+
+----------------------------------------------------------------
+ B) HEALTH-CHECKS  (zeigt, dass alle drei Services laufen)
+----------------------------------------------------------------
+
+Invoke-RestMethod http://localhost:8080/health
+# -> {"status":"ok"}  Main-API lebt
+
+Invoke-RestMethod http://localhost:8081/health
+# -> {"status":"ok"}  NotationService lebt
+
+Invoke-RestMethod http://localhost:8082/health
+# -> {"status":"ok"}  AiService lebt
+
+
+----------------------------------------------------------------
+ C) MODULE DIREKT ANSPRECHEN  (Nachweis der Modul-IPC)
+----------------------------------------------------------------
+
+# FEN vom NotationService validieren lassen
+Invoke-RestMethod -Method Post http://localhost:8081/notation/fen/validate `
+  -ContentType 'application/json' `
+  -Body '{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"}'
+# -> valid:true + normalisierte FEN
+
+# Ungueltige FEN -> valid:false + Fehlermeldung
+Invoke-RestMethod -Method Post http://localhost:8081/notation/fen/validate `
+  -ContentType 'application/json' -Body '{"fen":"kaputt"}'
+
+# PGN vom NotationService parsen lassen (Tags + SAN-Zuege extrahieren)
+Invoke-RestMethod -Method Post http://localhost:8081/notation/pgn/parse `
+  -ContentType 'application/json' `
+  -Body '{"pgn":"1. e4 e5 2. Nf3 Nc6 *"}'
+
+# AI direkt fragen: bester Zug fuer eine FEN-Stellung, Suchtiefe 2
+Invoke-RestMethod -Method Post http://localhost:8082/ai/bestmove `
+  -ContentType 'application/json' `
+  -Body '{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","depth":2}'
+# -> {"move":"g1f3", ...}  (oder aehnlich)
+
+
+----------------------------------------------------------------
+ D) VOLLSTAENDIGE GAME-API  (alle Endpunkte auf 8080)
+----------------------------------------------------------------
+
+# Aktuellen Spielzustand lesen
+Invoke-RestMethod http://localhost:8080/api/game
+# -> fen, status, turn, canUndo, canRedo, gameOver
+
+# Neues Spiel starten
+Invoke-RestMethod -Method Post http://localhost:8080/api/game/reset
+
+# Alle legalen Zuege der aktuellen Seite
+Invoke-RestMethod http://localhost:8080/api/game/legal-moves
+
+# Legale Zuege nur von einem bestimmten Feld (z.B. e2)
+Invoke-RestMethod "http://localhost:8080/api/game/legal-moves?from=e2"
+
+# Zug-Historie (UCI, aelteste zuerst)
+Invoke-RestMethod http://localhost:8080/api/game/history
+
+# Zug spielen (from/to in algebraischer Notation, optional promotion)
+Invoke-RestMethod -Method Post http://localhost:8080/api/game/move `
+  -ContentType 'application/json' -Body '{"from":"e2","to":"e4"}'
+
+Invoke-RestMethod -Method Post http://localhost:8080/api/game/move `
+  -ContentType 'application/json' -Body '{"from":"e7","to":"e5"}'
+
+# AI-Zug spielen lassen  (Main-API ruft intern AiService via HTTP auf)
+Invoke-RestMethod -Method Post http://localhost:8080/api/game/ai-move `
+  -ContentType 'application/json' -Body '{"depth":2}'
+# -> {"move":"...", "state":{...}}
+
+# Letzten Zug zuruecknehmen / wiederherstellen
+Invoke-RestMethod -Method Post http://localhost:8080/api/game/undo
+Invoke-RestMethod -Method Post http://localhost:8080/api/game/redo
+
+# Aktuellen FEN lesen
+Invoke-RestMethod http://localhost:8080/api/fen
+
+# FEN laden  (Main validiert via NotationService, dann uebernimmt Controller)
+Invoke-RestMethod -Method Post http://localhost:8080/api/fen `
+  -ContentType 'application/json' `
+  -Body '{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"}'
+
+# PGN exportieren
+Invoke-RestMethod http://localhost:8080/api/pgn
+
+# PGN importieren (wird von NotationService vorab geprueft)
+Invoke-RestMethod -Method Post http://localhost:8080/api/pgn `
+  -ContentType 'application/json' -Body '{"pgn":"1. e4 e5 2. Nf3 Nc6 *"}'
+
+
+----------------------------------------------------------------
+ E) STATUS-CODES PRUEFEN  (semantisch korrekte Fehler)
+----------------------------------------------------------------
+
+# Hilfsfunktion: faengt HTTP-Fehler ab und zeigt Statuscode
+function Test-Status($script) {
+  try { & $script | Out-Null; "200 OK" }
+  catch { "$($_.Exception.Response.StatusCode.value__) $($_.Exception.Response.StatusCode)" }
+}
+
+# 422 Unprocessable Entity – illegaler Zug
+Test-Status { Invoke-RestMethod -Method Post http://localhost:8080/api/game/move `
+  -ContentType 'application/json' -Body '{"from":"e2","to":"e5"}' }
+
+# 400 Bad Request – ungueltige Feldangabe
+Test-Status { Invoke-RestMethod -Method Post http://localhost:8080/api/game/move `
+  -ContentType 'application/json' -Body '{"from":"zz","to":"e4"}' }
+
+# 422 – ungueltige FEN
+Test-Status { Invoke-RestMethod -Method Post http://localhost:8080/api/fen `
+  -ContentType 'application/json' -Body '{"fen":"kaputt"}' }
+
+# 409 Conflict – nichts zum Undo nach Reset
+Invoke-RestMethod -Method Post http://localhost:8080/api/game/reset | Out-Null
+Test-Status { Invoke-RestMethod -Method Post http://localhost:8080/api/game/undo }
+
+# 503 Service Unavailable – AiService-Fenster mit Ctrl+C stoppen, dann:
+Test-Status { Invoke-RestMethod -Method Post http://localhost:8080/api/game/ai-move `
+  -ContentType 'application/json' -Body '{"depth":2}' }
+
+
+----------------------------------------------------------------
+ F) CONCURRENCY-LASTTEST  (Nachweis des Lock-Modells)
+----------------------------------------------------------------
+
+# 30 parallele Reset+Zug-Sequenzen feuern; dank lock.synchronized
+# sollte der End-Zustand konsistent und ohne Exceptions sein.
+1..30 | ForEach-Object -Parallel {
+  Invoke-RestMethod -Method Post http://localhost:8080/api/game/reset | Out-Null
+  Invoke-RestMethod -Method Post http://localhost:8080/api/game/move `
+    -ContentType 'application/json' -Body '{"from":"e2","to":"e4"}' | Out-Null
+} -ThrottleLimit 10
+
+Invoke-RestMethod http://localhost:8080/api/game
+# -> sollte sauberen State liefern, typischerweise nach e2e4
+
+
+----------------------------------------------------------------
+ G) UEBERSICHT ENDPOINTS
+----------------------------------------------------------------
+
+Main-API (8080):
+  GET  /health
+  GET  /api/game
+  POST /api/game/reset
+  POST /api/game/move         Body: {"from","to","promotion?"}
+  POST /api/game/undo
+  POST /api/game/redo
+  GET  /api/game/history
+  GET  /api/game/legal-moves[?from=e2]
+  POST /api/game/ai-move      Body: {"depth":2}
+  GET  /api/fen
+  POST /api/fen               Body: {"fen":"..."}
+  GET  /api/pgn
+  POST /api/pgn               Body: {"pgn":"..."}
+
+NotationService (8081):
+  GET  /health
+  POST /notation/fen/validate Body: {"fen":"..."}
+  POST /notation/pgn/parse    Body: {"pgn":"..."}
+
+AiService (8082):
+  GET  /health
+  POST /ai/bestmove           Body: {"fen":"...","depth":2}
+
+
+----------------------------------------------------------------
+ H) HINWEISE
+----------------------------------------------------------------
+
+- Unter bash/Git-Bash funktioniert stattdessen curl -X POST ... -d '{...}'
+  ohne Escaping-Probleme.
+- Unter PowerShell zwingend Invoke-RestMethod benutzen oder JSON in Datei
+  auslagern:  curl.exe ... -d "@body.json"
+- Port ueber Env-Var anpassbar: $env:ALMACHESS_PORT=9090
+- Host per Default 0.0.0.0 -> Docker-tauglich
+- In Docker Compose werden die Env-Vars der Main-API fest verdrahtet auf
+  ALMACHESS_AI_URL=http://ai-service:8082 und
+  ALMACHESS_NOTATION_URL=http://notation-service:8081.
+- Gleiches Image fuer alle drei Services; die Rolle entscheidet MAIN_CLASS.
+
+
+----------------------------------------------------------------
+ I) SMOKE-TESTS (unter bash / Git-Bash / WSL)
+----------------------------------------------------------------
+
+curl -fsS http://localhost:8080/health
+curl -fsS http://localhost:8081/health
+curl -fsS http://localhost:8082/health
+
+curl -fsS http://localhost:8080/api/game
+curl -fsS -X POST http://localhost:8080/api/game/reset
+curl -fsS -X POST http://localhost:8080/api/game/move \
+  -H 'Content-Type: application/json' -d '{"from":"e2","to":"e4"}'
+curl -fsS -X POST http://localhost:8080/api/game/ai-move \
+  -H 'Content-Type: application/json' -d '{"depth":2}'
+
+
+----------------------------------------------------------------
+ J) WEB-FRONTEND
+----------------------------------------------------------------
+
+Nach "docker compose up" oeffnen:  http://localhost:8079
+
+- Schachbrett mit Click-to-move (nutzt /api/game/legal-moves + /api/game/move)
+- Buttons: Neues Spiel, Undo, Redo, AI ziehen (Tiefe waehlbar)
+- FEN laden, PGN importieren/exportieren
+- Oben rechts: Live-Health-Badges fuer alle drei Services
+
+Status prüfen
+
+
+docker compose ps              # alle Container + Healthcheck-Status
+docker compose ps -a           # inkl. gestoppte
+docker compose logs -f         # Live-Logs aller Services
+docker compose logs -f almachess-api   # nur ein Service
+docker compose top             # Prozesse in den Containern
+docker stats                   # Live CPU/RAM pro Container
+Healthcheck aus der Host-Sicht:
+
+
+curl -fsS http://localhost:18080/health
+curl -fsS http://localhost:8081/health
+curl -fsS http://localhost:8082/health
+Neustarten
+
+
+docker compose restart                 # alle Container neu starten
+docker compose restart almachess-api   # nur einen Service
+docker compose up -d                   # fehlende/gestoppte (wieder) hochfahren
+docker compose down                    # alles stoppen + Netzwerk entfernen
+docker compose up --build              # Code geändert → neu bauen + starten
+docker compose up -d --build almachess-api   # nur einen Service neu bauen
+Troubleshooting
+
+
+docker compose logs --tail=100 almachess-api   # letzte 100 Zeilen
+docker compose exec almachess-api sh           # Shell im laufenden Container
+docker inspect almachess-api --format '{{json .State.Health}}' | jq
+docker compose config                          # Effektive Compose-Konfig anzeigen
+Aufräumen, wenn’s klemmt
+
+
+docker compose down --remove-orphans   # verwaiste Container mit entfernen
+docker compose down -v                 # inkl. Volumes
+docker system prune                    # ungenutzte Images/Netzwerke löschen
+Alle Befehle im Projektordner ausführen — docker compose liest automatisch die docker-compose.yml.

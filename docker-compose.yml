@@ -1,0 +1,78 @@
+services:
+
+  notation-service:
+    build:
+      context: .
+    image: almachess:latest
+    container_name: almachess-notation
+    environment:
+      MAIN_CLASS: de.htwg.softwarearchitecture.almachess.services.NotationService
+      NOTATION_HOST: 0.0.0.0
+      NOTATION_PORT: "8081"
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  ai-service:
+    build:
+      context: .
+    image: almachess:latest
+    container_name: almachess-ai
+    environment:
+      MAIN_CLASS: de.htwg.softwarearchitecture.almachess.services.AiService
+      AI_HOST: 0.0.0.0
+      AI_PORT: "8082"
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  almachess-api:
+    build:
+      context: .
+    image: almachess:latest
+    container_name: almachess-api
+    environment:
+      MAIN_CLASS: de.htwg.softwarearchitecture.almachess.api.Server
+      ALMACHESS_HOST: 0.0.0.0
+      ALMACHESS_PORT: "8080"
+      ALMACHESS_AI_URL: http://ai-service:8082
+      ALMACHESS_NOTATION_URL: http://notation-service:8081
+    ports:
+      - "18080:8080"
+    depends_on:
+      notation-service:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    image: nginx:alpine
+    container_name: almachess-web
+    volumes:
+      - ./web/html:/usr/share/nginx/html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8079:80"
+    depends_on:
+      almachess-api:
+        condition: service_healthy
+    restart: unless-stopped

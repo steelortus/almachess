@@ -5,8 +5,10 @@ lazy val akkaVersion     = "2.8.8"
 lazy val akkaHttpVersion = "10.5.3"
 
 lazy val root = (project in file("."))
+  .enablePlugins(JavaAppPackaging)
   .settings(
     name := "AlmaChess",
+    Compile / mainClass := Some("de.htwg.softwarearchitecture.almachess.api.Server"),
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-swing" % "3.0.0",
       "com.lihaoyi" %% "fastparse" % "3.1.1",
