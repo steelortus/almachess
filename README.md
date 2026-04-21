@@ -38,6 +38,11 @@ Microservices, bevor sie startet.
 Stoppen: `docker compose down`. Neuer Build nach Code-Änderung:
 `docker compose up --build`.
 
+Ggf. baut schlägt dieser fehl, dann muss man das ganze ohne cached items neu builden:
+```bash
+docker compose build --no-cache
+```
+
 ### Smoke-Tests (nach dem Start)
 
 ```bash
