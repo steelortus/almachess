@@ -24,6 +24,7 @@ final class MongoGameRepository(
     val doc = new Document()
       .append("gameId", game.gameId)
       .append("currentFen", game.currentFen)
+      .append("initialFen", game.initialFen)
       .append("pgn", game.pgn)
       .append("moves", game.moves.asJava)
       .append("status", game.status)
@@ -69,5 +70,6 @@ final class MongoGameRepository(
       pgn        = Option(doc.getString("pgn")).getOrElse(""),
       moves      = rawMoves,
       status     = Option(doc.getString("status")).getOrElse(""),
-      savedAt    = savedAt
+      savedAt    = savedAt,
+      initialFen = Option(doc.getString("initialFen")).getOrElse("")
     )

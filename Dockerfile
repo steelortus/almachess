@@ -27,8 +27,10 @@ FROM eclipse-temurin:17-jre
 WORKDIR /app
 
 # curl is used by the Compose healthchecks against /health.
+# stockfish is the UCI engine used by the AiService (auto-fallback to ChessAI
+# if AI_ENGINE=chess-ai or the binary cannot be launched).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl stockfish \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/universal/stage /app

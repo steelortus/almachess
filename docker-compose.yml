@@ -28,6 +28,8 @@ services:
       MAIN_CLASS: de.htwg.softwarearchitecture.almachess.services.AiService
       AI_HOST: 0.0.0.0
       AI_PORT: "8082"
+      AI_ENGINE: ${AI_ENGINE:-stockfish}
+      STOCKFISH_PATH: ${STOCKFISH_PATH:-/usr/games/stockfish}
     ports:
       - "8082:8082"
     healthcheck:

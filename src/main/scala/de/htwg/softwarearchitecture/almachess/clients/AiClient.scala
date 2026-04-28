@@ -16,13 +16,23 @@ import scala.concurrent.{ExecutionContext, Future}
 
 trait AiClient:
   /** Returns best move in UCI notation for the given FEN. */
-  def bestMove(fen: String, depth: Int): Future[Either[String, String]]
+  def bestMove(
+      fen: String,
+      depth: Int,
+      movetime: Option[Int] = None,
+      skill: Option[Int] = None
+  ): Future[Either[String, String]]
 
 object AiClient:
 
   final class Local(ec: ExecutionContext) extends AiClient:
     given ExecutionContext = ec
-    def bestMove(fen: String, depth: Int): Future[Either[String, String]] =
+    def bestMove(
+        fen: String,
+        depth: Int,
+        movetime: Option[Int] = None,
+        skill: Option[Int] = None
+    ): Future[Either[String, String]] =
       Future {
         FenParser.parse(fen).flatMap { state =>
           ChessAI.bestMove(state, depth) match
@@ -33,10 +43,15 @@ object AiClient:
 
   final class Http(baseUrl: String)(using system: ActorSystem[?]) extends AiClient:
     given ExecutionContext = system.executionContext
-    def bestMove(fen: String, depth: Int): Future[Either[String, String]] =
+    def bestMove(
+        fen: String,
+        depth: Int,
+        movetime: Option[Int] = None,
+        skill: Option[Int] = None
+    ): Future[Either[String, String]] =
       val uri = s"${baseUrl.stripSuffix("/")}/ai/bestmove"
       for
-        entity <- Marshal(BestMoveRequest(fen, Some(depth))).to[RequestEntity]
+        entity <- Marshal(BestMoveRequest(fen, Some(depth), movetime, skill)).to[RequestEntity]
         resp   <- akka.http.scaladsl.Http()(system).singleRequest(
                     HttpRequest(HttpMethods.POST, uri, entity = entity))
         body   <- Unmarshal(resp.entity).to[BestMoveResponse]

@@ -5,7 +5,7 @@ import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives.*
 import akka.http.scaladsl.server.Route
 import de.htwg.softwarearchitecture.almachess.control.Controller
-import de.htwg.softwarearchitecture.almachess.model.PieceType
+import de.htwg.softwarearchitecture.almachess.model.{GameState, PieceType}
 import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, GameSaveDto}
 
 import scala.concurrent.ExecutionContext
@@ -38,7 +38,8 @@ final class PersistenceRoutes(
         currentFen = controller.toFen,
         pgn        = controller.exportPgn(),
         moves      = historyUci,
-        status     = controller.state.status
+        status     = controller.state.status,
+        initialFen = controller.initialFen
       )
     }
 
@@ -53,7 +54,16 @@ final class PersistenceRoutes(
       case None       => disabled
 
   private def toResponse(dto: GameSaveDto): PersistenceGameDto =
-    PersistenceGameDto(dto.gameId, dto.currentFen, dto.pgn, dto.moves, dto.status, dto.savedAt)
+    PersistenceGameDto(dto.gameId, dto.currentFen, dto.pgn, dto.moves, dto.status, dto.savedAt, dto.initialFen)
+
+  private def restoreFromDto(dto: GameSaveDto): Either[String, Unit] =
+    val startFen =
+      if dto.initialFen.nonEmpty then dto.initialFen
+      else GameState.initial.toFen
+    controller.loadSnapshot(startFen, dto.moves) match
+      case Right(_)  => Right(())
+      case Left(err) =>
+        controller.loadFen(dto.currentFen).map(_ => ()).left.map(_ => err)
 
   private val statusRoute: Route =
     path("api" / "persistence" / "status") {
@@ -96,9 +106,9 @@ final class PersistenceRoutes(
                 onComplete(repo.load(gameId)) {
                   case Success(Some(dto)) =>
                     sharedLock.synchronized {
-                      controller.loadFen(dto.currentFen) match
+                      restoreFromDto(dto) match
                         case Right(_)  => complete(toResponse(dto))
-                        case Left(err) => complete(StatusCodes.UnprocessableEntity -> ErrorResponse(s"loaded but FEN rejected: $err"))
+                        case Left(err) => complete(StatusCodes.UnprocessableEntity -> ErrorResponse(s"snapshot rejected: $err"))
                     }
                   case Success(None) =>
                     complete(StatusCodes.NotFound -> ErrorResponse(s"game not found: $gameId"))

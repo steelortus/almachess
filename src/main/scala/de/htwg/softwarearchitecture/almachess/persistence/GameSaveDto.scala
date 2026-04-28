@@ -6,7 +6,8 @@ case class GameSaveDto(
     pgn: String,
     moves: List[String],
     status: String,
-    savedAt: Long = 0L
+    savedAt: Long = 0L,
+    initialFen: String = ""
 )
 
 case class GameListEntry(gameId: String, savedAt: Long)

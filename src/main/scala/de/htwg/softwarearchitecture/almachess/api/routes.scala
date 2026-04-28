@@ -29,6 +29,16 @@ final class Routes(
   private val persistenceRoutes = new PersistenceRoutes(controller, repository, lock)
   private val liveRoutes        = new LiveGameRoutes(controller, liveStore, lock)
 
+  private def moveToUci(m: de.htwg.softwarearchitecture.almachess.model.Move): String =
+    val promo = m.promotion.map {
+      case PieceType.Queen  => "q"
+      case PieceType.Rook   => "r"
+      case PieceType.Bishop => "b"
+      case PieceType.Knight => "n"
+      case _                => ""
+    }.getOrElse("")
+    m.from.toAlgebraic + m.to.toAlgebraic + promo
+
   private def gameState: GameStateResponse = lock.synchronized {
     GameStateResponse(
       fen      = controller.toFen,
@@ -36,7 +46,8 @@ final class Routes(
       turn     = if controller.state.turn == Color.White then "white" else "black",
       canUndo  = controller.canUndo,
       canRedo  = controller.canRedo,
-      gameOver = controller.isGameOver
+      gameOver = controller.isGameOver,
+      lastMove = controller.lastMove.map(moveToUci)
     )
   }
 
@@ -114,7 +125,7 @@ final class Routes(
         path("ai-move") {
           post {
             entity(as[AiMoveRequest]) { req =>
-              val depth = req.depth.getOrElse(controller.currentAiDepth).max(1).min(6)
+              val depth = req.depth.getOrElse(controller.currentAiDepth).max(1).min(40)
               val fenSnapshot = lock.synchronized {
                 if controller.isGameOver then Left(s"game is over: ${controller.state.status}")
                 else Right(controller.toFen)
@@ -123,7 +134,7 @@ final class Routes(
                 case Left(err) =>
                   complete(StatusCodes.Conflict -> ErrorResponse(err))
                 case Right(fen) =>
-                  onComplete(aiClient.bestMove(fen, depth)) {
+                  onComplete(aiClient.bestMove(fen, depth, req.movetime, req.skill)) {
                     case Success(Right(uci)) =>
                       lock.synchronized {
                         if controller.toFen != fen then

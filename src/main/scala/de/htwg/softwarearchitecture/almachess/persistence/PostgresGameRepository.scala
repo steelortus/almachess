@@ -19,12 +19,13 @@ final class PostgresGameRepository(
     driver   = "org.postgresql.Driver"
   )
 
-  private final class GamesTable(tag: Tag) extends Table[(String, String, String, Long)](tag, "games"):
+  private final class GamesTable(tag: Tag) extends Table[(String, String, String, String, Long)](tag, "games"):
     def id         = column[String]("id", O.PrimaryKey)
     def status     = column[String]("status")
     def currentFen = column[String]("current_fen")
+    def initialFen = column[String]("initial_fen")
     def savedAt    = column[Long]("saved_at")
-    def *          = (id, status, currentFen, savedAt)
+    def *          = (id, status, currentFen, initialFen, savedAt)
 
   private final class MovesTable(tag: Tag) extends Table[(Long, String, String, Int)](tag, "moves"):
     def id        = column[Long]("id", O.PrimaryKey, O.AutoInc)
@@ -56,9 +57,11 @@ final class PostgresGameRepository(
              id          VARCHAR(128) PRIMARY KEY,
              status      TEXT NOT NULL,
              current_fen TEXT NOT NULL,
+             initial_fen TEXT NOT NULL DEFAULT '',
              saved_at    BIGINT NOT NULL DEFAULT 0
            )""",
-    sqlu"""ALTER TABLE games ADD COLUMN IF NOT EXISTS saved_at BIGINT NOT NULL DEFAULT 0""",
+    sqlu"""ALTER TABLE games ADD COLUMN IF NOT EXISTS saved_at    BIGINT NOT NULL DEFAULT 0""",
+    sqlu"""ALTER TABLE games ADD COLUMN IF NOT EXISTS initial_fen TEXT   NOT NULL DEFAULT ''""",
     sqlu"""CREATE TABLE IF NOT EXISTS moves (
              id         BIGSERIAL PRIMARY KEY,
              game_id    VARCHAR(128) NOT NULL REFERENCES games(id) ON DELETE CASCADE,
@@ -93,7 +96,7 @@ final class PostgresGameRepository(
       _ <- fens .filter(_.gameId === game.gameId).delete
       _ <- pgns .filter(_.gameId === game.gameId).delete
       _ <- games.filter(_.id     === game.gameId).delete
-      _ <- games += ((game.gameId, game.status, game.currentFen, ts))
+      _ <- games += ((game.gameId, game.status, game.currentFen, game.initialFen, ts))
       _ <- pgns  += ((0L, game.gameId, game.pgn))
       _ <- fens  += fenRow
       _ <- moves ++= moveRows
@@ -107,14 +110,15 @@ final class PostgresGameRepository(
     val movesQ = moves.filter(_.gameId === gameId).sortBy(_.moveIndex).map(_.uci).result
 
     db.run(gameQ.zip(pgnQ).zip(movesQ)).map {
-      case ((Some((id, status, currentFen, savedAt)), pgnOpt), uciList) =>
+      case ((Some((id, status, currentFen, initialFen, savedAt)), pgnOpt), uciList) =>
         Some(GameSaveDto(
           gameId     = id,
           currentFen = currentFen,
           pgn        = pgnOpt.getOrElse(""),
           moves      = uciList.toList,
           status     = status,
-          savedAt    = savedAt
+          savedAt    = savedAt,
+          initialFen = initialFen
         ))
       case _ => None
     }
@@ -123,7 +127,7 @@ final class PostgresGameRepository(
     db.run(games.filter(_.id === gameId).delete).map(_ => ())
 
   override def list(): Future[List[GameListEntry]] =
-    db.run(games.map(g => (g.id, g.savedAt)).sortBy(_._2.desc).result)
+    db.run(games.sortBy(_.savedAt.desc).map(g => (g.id, g.savedAt)).result)
       .map(_.toList.map { case (id, ts) => GameListEntry(id, ts) })
 
   override def close(): Unit = db.close()

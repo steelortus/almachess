@@ -20,6 +20,9 @@ let selected = null;          // algebraic square, e.g. "e2"
 let legalTargets = new Set(); // destinations for the selected square
 let currentBoard = {};        // square -> piece char
 let fenDirty = false;         // user edited fen textarea, don't overwrite
+let lastMoveSquares = null;   // { from: "e2", to: "e4" } | null
+let currentTurn = "white";    // side to move from last server state
+let currentGameOver = false;
 
 // ---------- logging --------------------------------------------------------
 
@@ -90,7 +93,7 @@ function renderBoard() {
   for (const cell of boardEl.children) {
     const sq = cell.dataset.sq;
     const piece = currentBoard[sq];
-    cell.classList.remove("selected", "legal", "capture", "piece-white", "piece-black", "drop-target");
+    cell.classList.remove("selected", "legal", "capture", "piece-white", "piece-black", "drop-target", "last-move");
     if (piece) {
       cell.textContent = PIECE_GLYPHS[piece.toLowerCase()];
       cell.classList.add(piece === piece.toUpperCase() ? "piece-white" : "piece-black");
@@ -98,6 +101,9 @@ function renderBoard() {
     } else {
       cell.textContent = "";
       cell.removeAttribute("draggable");
+    }
+    if (lastMoveSquares && (lastMoveSquares.from === sq || lastMoveSquares.to === sq)) {
+      cell.classList.add("last-move");
     }
     if (selected === sq) cell.classList.add("selected");
     if (legalTargets.has(sq)) {
@@ -121,9 +127,22 @@ function applyState(state) {
   statusEl.textContent = state.gameOver
     ? `${state.status} (Ende)`
     : state.status;
+  currentTurn = state.turn || "white";
+  currentGameOver = !!state.gameOver;
   selected = null;
   legalTargets = new Set();
+  lastMoveSquares = parseLastMove(state.lastMove);
   renderBoard();
+}
+
+function parseLastMove(uci) {
+  if (typeof uci !== "string" || uci.length < 4) return null;
+  return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
+}
+
+function lastMoveFromMoves(moves) {
+  if (!Array.isArray(moves) || moves.length === 0) return null;
+  return parseLastMove(moves[moves.length - 1]);
 }
 
 async function refreshPgn() {
@@ -168,6 +187,7 @@ async function onSquareClick(sq) {
       await refreshPgn();
       log(`Zug ${from}${sq}`, "ok");
       maybeAutosave();
+      maybeAutoAi();
     } catch (e) {
       log(`Zug abgelehnt: ${e.message}`, "err");
     }
@@ -265,6 +285,7 @@ async function onDrop(e, sq) {
     await refreshPgn();
     log(`Zug ${from}${sq}`, "ok");
     maybeAutosave();
+    maybeAutoAi();
   } catch (err) {
     log(`Zug abgelehnt: ${err.message}`, "err");
     clearSelection();
@@ -317,16 +338,44 @@ document.getElementById("btn-redo").addEventListener("click", async () => {
 });
 
 document.getElementById("btn-ai").addEventListener("click", async () => {
-  const depth = parseInt(document.getElementById("ai-depth").value, 10) || 2;
+  const fallbackDepth = parseInt(document.getElementById("ai-depth").value, 10) || 2;
+  await runAiMove(fallbackDepth);
+});
+
+async function runAiMove(fallbackDepth) {
+  const payload = buildAiMovePayload(fallbackDepth);
   try {
-    const res = await api("POST", "/api/game/ai-move", { depth });
+    const res = await api("POST", "/api/game/ai-move", payload);
     fenDirty = false;
     applyState(res.state);
     await refreshPgn();
     log(`AI-Zug: ${res.move}`, "ok");
     maybeAutosave();
-  } catch (e) { log(e.message, "err"); }
-});
+    return true;
+  } catch (e) { log(e.message, "err"); return false; }
+}
+
+function buildAiMovePayload(fallbackDepth) {
+  // If Stockfish is the active engine, use the values from the fish menu
+  // (mode = depth | movetime + skill). Otherwise just send the depth from
+  // the AI panel — the local ChessAI ignores movetime/skill anyway.
+  const payload = {};
+  if (stockfishActive) {
+    const mode = (document.querySelector('input[name="fish-mode"]:checked') || {}).value || "depth";
+    if (mode === "movetime") {
+      const ms = parseInt(document.getElementById("fish-movetime").value, 10);
+      if (ms > 0) payload.movetime = ms;
+    } else {
+      const d = parseInt(document.getElementById("fish-depth").value, 10);
+      if (d > 0) payload.depth = d;
+    }
+    const skill = parseInt(document.getElementById("fish-skill").value, 10);
+    if (!Number.isNaN(skill)) payload.skill = skill;
+  } else {
+    payload.depth = fallbackDepth;
+  }
+  return payload;
+}
 
 // FEN panel: edit freely, load, or copy current value
 fenEl.addEventListener("input", () => { fenDirty = true; });
@@ -603,6 +652,82 @@ document.getElementById("btn-live-save").addEventListener("click", () => liveSav
 document.getElementById("btn-live-load").addEventListener("click", liveLoad);
 document.getElementById("btn-live-delete").addEventListener("click", liveDelete);
 
+// ---------- stockfish status + menu ---------------------------------------
+
+const stockfishBadgeEl = document.getElementById("stockfish-badge");
+const fishMenuEl       = document.getElementById("fish-menu");
+const fishMenuToggle   = document.getElementById("btn-fish-menu");
+const fishEngineNameEl = document.getElementById("fish-engine-name");
+const fishAutoEl       = document.getElementById("chk-fish-auto");
+let stockfishActive = false;
+let stockfishEngineName = "";
+
+function setStockfishBadge(state, text) {
+  stockfishBadgeEl.classList.remove("up", "down");
+  if (state === "up")   stockfishBadgeEl.classList.add("up");
+  if (state === "down") stockfishBadgeEl.classList.add("down");
+  stockfishBadgeEl.textContent = text;
+}
+
+async function refreshStockfishStatus() {
+  try {
+    const status = await api("GET", "/ai/status");
+    stockfishActive = !!status.enabled && status.backend === "stockfish";
+    stockfishEngineName = status.engine || "";
+    fishEngineNameEl.textContent = status.engine || status.backend || "—";
+    if (stockfishActive) {
+      const short = (status.engine || "Stockfish").split(/\s+/).slice(0, 2).join(" ");
+      setStockfishBadge("up", short);
+    } else if (status.fallback) {
+      setStockfishBadge("down", "Stockfish (Fallback)");
+    } else {
+      setStockfishBadge("down", "Stockfish n/a");
+    }
+  } catch (e) {
+    stockfishActive = false;
+    fishEngineNameEl.textContent = "n/a";
+    setStockfishBadge("down", "Stockfish n/a");
+  }
+}
+
+function toggleFishMenu(force) {
+  const open = force !== undefined ? force : fishMenuEl.hasAttribute("hidden");
+  if (open) {
+    fishMenuEl.removeAttribute("hidden");
+    fishMenuToggle.setAttribute("aria-expanded", "true");
+    refreshStockfishStatus();
+  } else {
+    fishMenuEl.setAttribute("hidden", "");
+    fishMenuToggle.setAttribute("aria-expanded", "false");
+  }
+}
+
+fishMenuToggle.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleFishMenu();
+});
+
+document.addEventListener("click", (e) => {
+  if (fishMenuEl.hasAttribute("hidden")) return;
+  if (fishMenuEl.contains(e.target) || fishMenuToggle.contains(e.target)) return;
+  toggleFishMenu(false);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !fishMenuEl.hasAttribute("hidden")) toggleFishMenu(false);
+});
+
+// Auto-play after a human move when "Gegen AI spielen" is on.
+async function maybeAutoAi() {
+  if (!fishAutoEl.checked) return;
+  if (currentGameOver) return;
+  const playerColor = (document.querySelector('input[name="fish-color"]:checked') || {}).value || "white";
+  const aiSide = playerColor === "white" ? "black" : "white";
+  if (currentTurn !== aiSide) return;
+  const fallbackDepth = parseInt(document.getElementById("ai-depth").value, 10) || 2;
+  await runAiMove(fallbackDepth);
+}
+
 // ---------- health polling -------------------------------------------------
 
 async function pingHealth() {
@@ -630,5 +755,7 @@ buildBoard();
 refreshState().catch(e => log(`init: ${e.message}`, "err"));
 refreshPersistenceStatus();
 refreshLiveStatus();
+refreshStockfishStatus();
 pingHealth();
 setInterval(pingHealth, 5000);
+setInterval(refreshStockfishStatus, 5000);

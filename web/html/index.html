@@ -16,10 +16,45 @@
       <span data-svc="api">API</span>
       <span data-svc="notation">Notation</span>
       <span data-svc="ai">AI</span>
+      <span data-svc="stockfish" id="stockfish-badge">Stockfish —</span>
       <span data-svc="db" id="db-badge">DB —</span>
       <span data-svc="redis" id="redis-badge">Redis —</span>
+      <button id="btn-fish-menu" class="icon-btn" title="Stockfish-Einstellungen" aria-haspopup="true" aria-expanded="false">🐟</button>
       <button id="btn-db-menu" class="icon-btn" title="Datenbank-Menü" aria-haspopup="true" aria-expanded="false">⚙</button>
     </div>
+    <div id="fish-menu" class="db-menu fish-menu" hidden>
+      <div class="db-menu-header">
+        <strong>Stockfish</strong>
+        <span class="db-menu-backend">Engine: <span id="fish-engine-name">—</span></span>
+      </div>
+      <div class="db-menu-row">
+        <span>Modus</span>
+        <div class="fish-mode-row">
+          <label><input type="radio" name="fish-mode" value="depth" checked /> Tiefe</label>
+          <label><input type="radio" name="fish-mode" value="movetime" /> Zeit (ms)</label>
+        </div>
+      </div>
+      <label class="db-menu-row">Tiefe
+        <input id="fish-depth" type="number" min="1" max="30" value="12" />
+      </label>
+      <label class="db-menu-row">Zeit pro Zug (ms)
+        <input id="fish-movetime" type="number" min="50" max="60000" step="50" value="500" />
+      </label>
+      <label class="db-menu-row">Skill Level (0–20)
+        <input id="fish-skill" type="number" min="0" max="20" value="20" />
+      </label>
+      <label class="db-autosave-toggle">
+        <input id="chk-fish-auto" type="checkbox" /> Automatisch nach eigenem Zug spielen
+      </label>
+      <div class="db-menu-row">
+        <span>Spielerfarbe (für Auto-Modus)</span>
+        <div class="fish-mode-row">
+          <label><input type="radio" name="fish-color" value="white" checked /> Weiß</label>
+          <label><input type="radio" name="fish-color" value="black" /> Schwarz</label>
+        </div>
+      </div>
+    </div>
+
     <div id="db-menu" class="db-menu" hidden>
       <div class="db-menu-header">
         <strong>Datenbank</strong>

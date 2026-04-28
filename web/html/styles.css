@@ -353,6 +353,20 @@ textarea {
   padding: 0.2rem 0.1rem;
 }
 
+.fish-menu { width: 20rem; }
+.fish-mode-row {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--fg);
+}
+.fish-mode-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
 @media (max-width: 1100px) {
   main { grid-template-columns: 1fr minmax(260px, 320px); }
   .log-col { display: none; }

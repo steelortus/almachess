@@ -61,9 +61,15 @@ class Controller(private var currentState: GameState = GameState.initial) extend
   /** All moves played so far, in chronological order. */
   def moveHistory: List[Move] = undoStack.reverse.map(_._2)
 
+  /** Most recently played move, if any. */
+  def lastMove: Option[Move] = undoStack.headOption.map(_._2)
+
   def ascii: String  = currentState.board.toAscii
   def toFen: String  = currentState.toFen
   def currentFen: String = currentState.toFen
+
+  /** FEN of the position the current game started from (after reset / FEN load / snapshot). */
+  def initialFen: String = initialState.toFen
 
   def isGameOver: Boolean =
     currentState.status.startsWith("checkmate") || currentState.status == "stalemate"
@@ -87,6 +93,23 @@ class Controller(private var currentState: GameState = GameState.initial) extend
       notifyObservers(GameEvent.BoardChanged(currentState))
       notifyObservers(GameEvent.Status(s"position loaded: ${currentState.toFen}"))
       "FEN geladen."
+    }
+
+  /** Restore a saved game by replaying UCI moves from a starting FEN.
+   *  After this call exportPgn() reflects the full move history. */
+  def loadSnapshot(startFen: String, uciMoves: List[String]): Either[String, String] =
+    FenParser.parse(startFen).flatMap { startState =>
+      replayMoves(startState, uciMoves.map { uci =>
+        (_: GameState) => Move.parse(uci)
+      }).map { case (finalState, played) =>
+        initialState = startState
+        currentState = finalState
+        undoStack    = buildUndoStack(startState, played)
+        redoStack    = Nil
+        notifyObservers(GameEvent.BoardChanged(currentState))
+        notifyObservers(GameEvent.Status(currentState.status))
+        s"Snapshot geladen: ${played.size} Züge"
+      }
     }
 
   // --- Move ---
@@ -166,7 +189,12 @@ class Controller(private var currentState: GameState = GameState.initial) extend
       else if currentState.status == "stalemate" then "1/2-1/2"
       else "*"
 
-    val updatedTags = tags + ("Result" -> result)
+    val baseTags = tags + ("Result" -> result)
+    val updatedTags =
+      if initialState.toFen != GameState.initial.toFen then
+        baseTags + ("SetUp" -> "1") + ("FEN" -> initialState.toFen)
+      else
+        baseTags - "SetUp" - "FEN"
     val headerStr   = updatedTags.map { case (k, v) => s"""[$k "$v"]""" }.mkString("\n")
 
     // Replay moves from initial state to generate SAN
