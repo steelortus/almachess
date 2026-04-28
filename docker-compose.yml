@@ -8,11 +8,11 @@ services:
     environment:
       MAIN_CLASS: de.htwg.softwarearchitecture.almachess.services.NotationService
       NOTATION_HOST: 0.0.0.0
-      NOTATION_PORT: "8081"
+      NOTATION_PORT: "8084"
     ports:
-      - "8081:8081"
+      - "8084:8084"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8081/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8084/health"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -38,6 +38,55 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: almachess-postgres
+    environment:
+      POSTGRES_DB: almachess
+      POSTGRES_USER: almachess
+      POSTGRES_PASSWORD: almachess
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U almachess -d almachess"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: almachess-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    container_name: almachess-mongo
+    # Kein Host-Port-Mapping: 27017 ist auf vielen Dev-Hosts schon belegt.
+    # Compose-internes Netz reicht für die API. Für lokales Debugging: ports: ["27018:27017"].
+    expose:
+      - "27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
   almachess-api:
     build:
       context: .
@@ -46,18 +95,36 @@ services:
     environment:
       MAIN_CLASS: de.htwg.softwarearchitecture.almachess.api.Server
       ALMACHESS_HOST: 0.0.0.0
-      ALMACHESS_PORT: "8080"
+      ALMACHESS_PORT: "8083"
       ALMACHESS_AI_URL: http://ai-service:8082
-      ALMACHESS_NOTATION_URL: http://notation-service:8081
+      ALMACHESS_NOTATION_URL: http://notation-service:8084
+      ALMACHESS_DB: ${ALMACHESS_DB:-mongo}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: almachess
+      POSTGRES_USER: almachess
+      POSTGRES_PASSWORD: almachess
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: almachess
+      REDIS_ENABLED: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_TTL_SECONDS: "1800"
     ports:
-      - "18080:8080"
+      - "8083:8083"
     depends_on:
       notation-service:
         condition: service_healthy
       ai-service:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/health"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -76,3 +143,7 @@ services:
       almachess-api:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres-data:
+  mongo-data:

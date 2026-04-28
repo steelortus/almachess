@@ -37,6 +37,30 @@ case class PgnParseResponse(tags: Map[String, String], moves: List[String])
 case class BestMoveRequest(fen: String, depth: Option[Int] = None)
 case class BestMoveResponse(move: Option[String], error: Option[String] = None)
 
+// --- Persistence DTOs ---
+case class PersistenceGameDto(
+    gameId: String,
+    currentFen: String,
+    pgn: String,
+    moves: List[String],
+    status: String,
+    savedAt: Long
+)
+case class PersistenceListEntry(gameId: String, savedAt: Long)
+case class PersistenceListResponse(games: List[PersistenceListEntry])
+case class PersistenceStatusResponse(enabled: Boolean, backend: String)
+
+// --- Live (Redis) DTOs ---
+case class LiveGameDto(
+    gameId: String,
+    currentFen: String,
+    pgn: String,
+    moves: List[String],
+    status: String,
+    savedAt: Long
+)
+case class LiveStatusResponse(enabled: Boolean, backend: String, ttlSeconds: Int)
+
 object JsonFormats extends DefaultJsonProtocol:
   given RootJsonFormat[MoveRequest]         = jsonFormat3(MoveRequest.apply)
   given RootJsonFormat[FenLoadRequest]      = jsonFormat1(FenLoadRequest.apply)
@@ -59,3 +83,11 @@ object JsonFormats extends DefaultJsonProtocol:
   given RootJsonFormat[PgnParseResponse]    = jsonFormat2(PgnParseResponse.apply)
   given RootJsonFormat[BestMoveRequest]     = jsonFormat2(BestMoveRequest.apply)
   given RootJsonFormat[BestMoveResponse]    = jsonFormat2(BestMoveResponse.apply)
+
+  given RootJsonFormat[PersistenceGameDto]        = jsonFormat6(PersistenceGameDto.apply)
+  given RootJsonFormat[PersistenceListEntry]      = jsonFormat2(PersistenceListEntry.apply)
+  given RootJsonFormat[PersistenceListResponse]   = jsonFormat1(PersistenceListResponse.apply)
+  given RootJsonFormat[PersistenceStatusResponse] = jsonFormat2(PersistenceStatusResponse.apply)
+
+  given RootJsonFormat[LiveGameDto]        = jsonFormat6(LiveGameDto.apply)
+  given RootJsonFormat[LiveStatusResponse] = jsonFormat3(LiveStatusResponse.apply)

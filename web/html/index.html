@@ -16,6 +16,47 @@
       <span data-svc="api">API</span>
       <span data-svc="notation">Notation</span>
       <span data-svc="ai">AI</span>
+      <span data-svc="db" id="db-badge">DB —</span>
+      <span data-svc="redis" id="redis-badge">Redis —</span>
+      <button id="btn-db-menu" class="icon-btn" title="Datenbank-Menü" aria-haspopup="true" aria-expanded="false">⚙</button>
+    </div>
+    <div id="db-menu" class="db-menu" hidden>
+      <div class="db-menu-header">
+        <strong>Datenbank</strong>
+        <span class="db-menu-backend">Aktive DB: <span id="db-menu-backend">—</span></span>
+      </div>
+      <label class="db-menu-row">Game ID
+        <input id="db-game-id" type="text" placeholder="z.B. partie-1" />
+      </label>
+      <div class="db-menu-buttons">
+        <button id="btn-db-save">Speichern</button>
+        <button id="btn-db-load">Laden</button>
+        <button id="btn-db-delete">Löschen</button>
+        <button id="btn-db-list">Aktualisieren</button>
+      </div>
+      <div class="db-menu-list-label">Gespeicherte Partien</div>
+      <ul id="db-list" class="db-list"></ul>
+
+      <hr class="db-menu-sep" />
+
+      <div class="db-menu-header">
+        <strong>Live Autosave</strong>
+        <span class="db-menu-backend">
+          <span id="live-backend">—</span>
+          <span id="live-ttl" class="db-menu-ttl"></span>
+        </span>
+      </div>
+      <label class="db-menu-row">Session ID
+        <input id="live-session-id" type="text" placeholder="z.B. browser-session-1" value="browser-session-1" />
+      </label>
+      <div class="db-menu-buttons">
+        <button id="btn-live-save">Live speichern</button>
+        <button id="btn-live-load">Live laden</button>
+        <button id="btn-live-delete">Live löschen</button>
+        <label class="db-autosave-toggle">
+          <input id="chk-live-autosave" type="checkbox" /> Autosave nach Zug
+        </label>
+      </div>
     </div>
   </header>
 
@@ -65,6 +106,7 @@
           <button id="btn-pgn-load">Laden</button>
         </div>
       </div>
+
     </aside>
   </main>
 

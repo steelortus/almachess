@@ -167,6 +167,7 @@ async function onSquareClick(sq) {
       applyState(state);
       await refreshPgn();
       log(`Zug ${from}${sq}`, "ok");
+      maybeAutosave();
     } catch (e) {
       log(`Zug abgelehnt: ${e.message}`, "err");
     }
@@ -263,6 +264,7 @@ async function onDrop(e, sq) {
     applyState(state);
     await refreshPgn();
     log(`Zug ${from}${sq}`, "ok");
+    maybeAutosave();
   } catch (err) {
     log(`Zug abgelehnt: ${err.message}`, "err");
     clearSelection();
@@ -322,6 +324,7 @@ document.getElementById("btn-ai").addEventListener("click", async () => {
     applyState(res.state);
     await refreshPgn();
     log(`AI-Zug: ${res.move}`, "ok");
+    maybeAutosave();
   } catch (e) { log(e.message, "err"); }
 });
 
@@ -358,6 +361,248 @@ document.getElementById("btn-pgn-load").addEventListener("click", async () => {
   } catch (e) { log(e.message, "err"); }
 });
 
+// ---------- persistence ----------------------------------------------------
+
+const dbBadgeEl       = document.getElementById("db-badge");
+const dbMenuEl        = document.getElementById("db-menu");
+const dbMenuToggle    = document.getElementById("btn-db-menu");
+const dbMenuBackendEl = document.getElementById("db-menu-backend");
+const dbIdEl          = document.getElementById("db-game-id");
+const dbListEl        = document.getElementById("db-list");
+let persistenceEnabled = false;
+
+function currentGameId() {
+  const v = (dbIdEl.value || "").trim();
+  if (!v) {
+    log("Bitte Game ID eingeben", "err");
+    return null;
+  }
+  return v;
+}
+
+function formatSavedAt(ms) {
+  if (!ms || ms <= 0) return "—";
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return "—";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderDbList(entries) {
+  dbListEl.innerHTML = "";
+  if (!entries || entries.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "(keine gespeicherten Spiele)";
+    dbListEl.appendChild(li);
+    return;
+  }
+  for (const entry of entries) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.className = "db-list-name";
+    name.textContent = entry.gameId;
+    const date = document.createElement("span");
+    date.className = "db-list-date";
+    date.textContent = formatSavedAt(entry.savedAt);
+    li.appendChild(name);
+    li.appendChild(date);
+    li.title = "Klicken zum Laden";
+    li.addEventListener("click", () => loadGame(entry.gameId));
+    dbListEl.appendChild(li);
+  }
+}
+
+function setBadge(state, text) {
+  dbBadgeEl.classList.remove("up", "down");
+  if (state === "up")   dbBadgeEl.classList.add("up");
+  if (state === "down") dbBadgeEl.classList.add("down");
+  dbBadgeEl.textContent = text;
+}
+
+async function refreshPersistenceStatus() {
+  try {
+    const status = await api("GET", "/api/persistence/status");
+    persistenceEnabled = !!status.enabled;
+    const backend = status.backend || "—";
+    dbMenuBackendEl.textContent = backend;
+    setBadge(persistenceEnabled ? "up" : "down", `DB ${backend}`);
+    if (persistenceEnabled) await refreshDbList();
+    else renderDbList([]);
+  } catch (e) {
+    persistenceEnabled = false;
+    dbMenuBackendEl.textContent = "n/a";
+    setBadge("down", "DB n/a");
+    renderDbList([]);
+  }
+}
+
+async function refreshDbList() {
+  try {
+    const res = await api("GET", "/api/persistence/games");
+    renderDbList(res.games || []);
+  } catch (e) {
+    log(`DB-Liste: ${e.message}`, "err");
+  }
+}
+
+async function loadGame(id) {
+  try {
+    const dto = await api("GET", `/api/persistence/games/${encodeURIComponent(id)}`);
+    fenDirty = false;
+    fenEl.value = dto.currentFen || "";
+    pgnEl.value = dto.pgn || "";
+    currentBoard = parseFen(dto.currentFen || "");
+    statusEl.textContent = dto.status || "";
+    selected = null;
+    legalTargets = new Set();
+    renderBoard();
+    dbIdEl.value = dto.gameId;
+    log(`geladen: ${dto.gameId}`, "ok");
+  } catch (e) { log(`Laden: ${e.message}`, "err"); }
+}
+
+function toggleDbMenu(force) {
+  const open = force !== undefined ? force : dbMenuEl.hasAttribute("hidden");
+  if (open) {
+    dbMenuEl.removeAttribute("hidden");
+    dbMenuToggle.setAttribute("aria-expanded", "true");
+    refreshPersistenceStatus();
+    refreshLiveStatus();
+  } else {
+    dbMenuEl.setAttribute("hidden", "");
+    dbMenuToggle.setAttribute("aria-expanded", "false");
+  }
+}
+
+dbMenuToggle.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleDbMenu();
+});
+
+document.addEventListener("click", (e) => {
+  if (dbMenuEl.hasAttribute("hidden")) return;
+  if (dbMenuEl.contains(e.target) || dbMenuToggle.contains(e.target)) return;
+  toggleDbMenu(false);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !dbMenuEl.hasAttribute("hidden")) toggleDbMenu(false);
+});
+
+document.getElementById("btn-db-save").addEventListener("click", async () => {
+  const id = currentGameId(); if (!id) return;
+  try {
+    const dto = await api("POST", `/api/persistence/games/${encodeURIComponent(id)}`);
+    log(`gespeichert: ${dto.gameId} (${dto.moves.length} Züge)`, "ok");
+    await refreshDbList();
+  } catch (e) { log(`Speichern: ${e.message}`, "err"); }
+});
+
+document.getElementById("btn-db-load").addEventListener("click", async () => {
+  const id = currentGameId(); if (!id) return;
+  await loadGame(id);
+});
+
+document.getElementById("btn-db-delete").addEventListener("click", async () => {
+  const id = currentGameId(); if (!id) return;
+  try {
+    await api("DELETE", `/api/persistence/games/${encodeURIComponent(id)}`);
+    log(`gelöscht: ${id}`, "ok");
+    await refreshDbList();
+  } catch (e) { log(`Löschen: ${e.message}`, "err"); }
+});
+
+document.getElementById("btn-db-list").addEventListener("click", refreshPersistenceStatus);
+
+// ---------- live (redis) ---------------------------------------------------
+
+const redisBadgeEl    = document.getElementById("redis-badge");
+const liveBackendEl   = document.getElementById("live-backend");
+const liveTtlEl       = document.getElementById("live-ttl");
+const liveSessionEl   = document.getElementById("live-session-id");
+const liveAutosaveEl  = document.getElementById("chk-live-autosave");
+let liveEnabled = false;
+
+function setRedisBadge(state, text) {
+  redisBadgeEl.classList.remove("up", "down");
+  if (state === "up")   redisBadgeEl.classList.add("up");
+  if (state === "down") redisBadgeEl.classList.add("down");
+  redisBadgeEl.textContent = text;
+}
+
+function currentSessionId() {
+  const v = (liveSessionEl.value || "").trim();
+  if (!v) {
+    log("Bitte Session ID eingeben", "err");
+    return null;
+  }
+  return v;
+}
+
+async function refreshLiveStatus() {
+  try {
+    const status = await api("GET", "/api/live/status");
+    liveEnabled = !!status.enabled;
+    const backend = status.backend || "—";
+    liveBackendEl.textContent = backend;
+    liveTtlEl.textContent = liveEnabled && status.ttlSeconds
+      ? `(TTL ${status.ttlSeconds}s)`
+      : "";
+    setRedisBadge(liveEnabled ? "up" : "down", liveEnabled ? `Redis ${backend}` : "Redis n/a");
+  } catch (e) {
+    liveEnabled = false;
+    liveBackendEl.textContent = "n/a";
+    liveTtlEl.textContent = "";
+    setRedisBadge("down", "Redis n/a");
+  }
+}
+
+async function liveSave(silent = false) {
+  const id = currentSessionId(); if (!id) return false;
+  try {
+    const dto = await api("POST", `/api/live/${encodeURIComponent(id)}`);
+    if (!silent) log(`live gespeichert: ${dto.gameId}`, "ok");
+    return true;
+  } catch (e) {
+    if (!silent) log(`Live-Speichern: ${e.message}`, "err");
+    return false;
+  }
+}
+
+async function liveLoad() {
+  const id = currentSessionId(); if (!id) return;
+  try {
+    const dto = await api("GET", `/api/live/${encodeURIComponent(id)}`);
+    fenDirty = false;
+    fenEl.value = dto.currentFen || "";
+    pgnEl.value = dto.pgn || "";
+    currentBoard = parseFen(dto.currentFen || "");
+    statusEl.textContent = dto.status || "";
+    selected = null;
+    legalTargets = new Set();
+    renderBoard();
+    log(`live geladen: ${dto.gameId}`, "ok");
+  } catch (e) { log(`Live-Laden: ${e.message}`, "err"); }
+}
+
+async function liveDelete() {
+  const id = currentSessionId(); if (!id) return;
+  try {
+    await api("DELETE", `/api/live/${encodeURIComponent(id)}`);
+    log(`live gelöscht: ${id}`, "ok");
+  } catch (e) { log(`Live-Löschen: ${e.message}`, "err"); }
+}
+
+async function maybeAutosave() {
+  if (!liveAutosaveEl.checked || !liveEnabled) return;
+  await liveSave(true);
+}
+
+document.getElementById("btn-live-save").addEventListener("click", () => liveSave(false));
+document.getElementById("btn-live-load").addEventListener("click", liveLoad);
+document.getElementById("btn-live-delete").addEventListener("click", liveDelete);
+
 // ---------- health polling -------------------------------------------------
 
 async function pingHealth() {
@@ -383,5 +628,7 @@ async function pingHealth() {
 
 buildBoard();
 refreshState().catch(e => log(`init: ${e.message}`, "err"));
+refreshPersistenceStatus();
+refreshLiveStatus();
 pingHealth();
 setInterval(pingHealth, 5000);

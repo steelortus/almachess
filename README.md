@@ -55,3 +55,8 @@ curl -fsS -X POST http://localhost:8080/api/game/ai-move \
 ```
 
 Die vollständige Endpunkt-Übersicht steht in [`TEST-SPICKZETTEL.txt`](TEST-SPICKZETTEL.txt).
+
+todo
+1. ai spiel funktion einbauen
+2. ai logik verbessern damit sie schneller ist und schlauer
+3. blitz modus mit timer

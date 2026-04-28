@@ -7,6 +7,7 @@ import akka.http.scaladsl.server.Route
 import de.htwg.softwarearchitecture.almachess.clients.{AiClient, NotationClient}
 import de.htwg.softwarearchitecture.almachess.control.Controller
 import de.htwg.softwarearchitecture.almachess.model.{Color, PieceType}
+import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, LiveGameStore}
 
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
@@ -16,12 +17,17 @@ import JsonFormats.given
 final class Routes(
     controller: Controller,
     aiClient: AiClient,
-    notationClient: NotationClient
+    notationClient: NotationClient,
+    repository: Option[GameRepository] = None,
+    liveStore: Option[LiveGameStore] = None
 )(using ec: ExecutionContext):
 
   // All mutating access to the Controller is serialized through this lock
   // so parallel HTTP requests cannot race on the shared mutable game state.
   private val lock = new Object
+
+  private val persistenceRoutes = new PersistenceRoutes(controller, repository, lock)
+  private val liveRoutes        = new LiveGameRoutes(controller, liveStore, lock)
 
   private def gameState: GameStateResponse = lock.synchronized {
     GameStateResponse(
@@ -204,4 +210,4 @@ final class Routes(
       )
     }
 
-  val all: Route = concat(healthRoutes, gameRoutes, fenRoutes, pgnRoutes)
+  val all: Route = concat(healthRoutes, gameRoutes, fenRoutes, pgnRoutes, persistenceRoutes.all, liveRoutes.all)

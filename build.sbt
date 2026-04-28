@@ -19,6 +19,11 @@ lazy val root = (project in file("."))
       ("com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion).cross(CrossVersion.for3Use2_13),
       ("com.typesafe.akka" %% "akka-slf4j"           % akkaVersion).cross(CrossVersion.for3Use2_13),
       "ch.qos.logback" % "logback-classic" % "1.4.14",
+      "com.typesafe.slick" %% "slick"          % "3.5.1",
+      "com.typesafe.slick" %% "slick-hikaricp" % "3.5.1",
+      "org.postgresql"      % "postgresql"     % "42.7.4",
+      ("org.mongodb.scala" %% "mongo-scala-driver" % "4.11.1").cross(CrossVersion.for3Use2_13),
+      "io.lettuce"          % "lettuce-core"       % "6.3.2.RELEASE",
       ("com.typesafe.akka" %% "akka-http-testkit"  % akkaHttpVersion % Test).cross(CrossVersion.for3Use2_13),
       ("com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test).cross(CrossVersion.for3Use2_13),
       "org.scalatest" %% "scalatest" % "3.2.17" % Test
