@@ -1,87 +1,72 @@
-package de.htwg.softwarearchitecture.almachess.Model
+package de.htwg.softwarearchitecture.almachess.model
 
-import de.htwg.softwarearchitecture.almachess.util.{Observable, GameEvent}
+case class Board(squares: Vector[Vector[Option[Piece]]]):
+  require(squares.length == 8 && squares.forall(_.length == 8), "board must be 8x8")
 
-case class Board(squares: Vector[Vector[Option[Piece]]]) extends Observable:
-  require(squares.length == 8 && squares.forall(_.length == 8))
+  def pieceAt(pos: Pos): Option[Piece] =
+    if pos.isInside then squares(pos.rank)(pos.file) else None
 
-  def pieceAt(rank: Int, file: Int): Option[Piece] = squares(rank)(file)
+  def updated(pos: Pos, piece: Option[Piece]): Board =
+    copy(squares = squares.updated(pos.rank, squares(pos.rank).updated(pos.file, piece)))
+
+  def map(f: Option[Piece] => Option[Piece]): Board =
+    Board(squares.map(_.map(f)))
+  def flatMap(f: Board => Board): Board = f(this)
+  def foreach(f: Option[Piece] => Unit): Unit =
+    squares.flatten.foreach(f)
+
+  def positions: Vector[Pos] =
+    (for
+      r <- 0 until 8
+      f <- 0 until 8
+    yield Pos(r, f)).toVector
+
+  def findKing(color: Color): Option[Pos] =
+    positions.find(pieceAt(_).contains(Piece(color, PieceType.King)))
+
+  def hasKing(color: Color): Boolean = findKing(color).nonEmpty
+
+  def isEmpty(pos: Pos): Boolean = pieceAt(pos).isEmpty
+
+  def isEnemy(pos: Pos, color: Color): Boolean = pieceAt(pos).exists(_.color != color)
+
+  def clearPath(from: Pos, to: Pos): Boolean =
+    val dr = Integer.signum(to.rank - from.rank)
+    val df = Integer.signum(to.file - from.file)
+    Iterator
+      .iterate(from + (dr, df))(_ + (dr, df))
+      .takeWhile(_ != to)
+      .forall(isEmpty)
 
   def toAscii: String =
     val ranks = (7 to 0 by -1).map { r =>
       val row = (0 until 8).map { f =>
-        pieceAt(r, f).map(_.toString).getOrElse(".")
+        pieceAt(Pos(r, f)).map(_.toString).getOrElse(".")
       }.mkString(" ")
       s"${r + 1} | $row"
     }
-    val files = "  | " + (('a' to 'h').mkString(" "))
+    val files = "   +----------------\n     a b c d e f g h"
     (ranks :+ files).mkString("\n")
 
-  def coords(square: String): Option[(Int, Int)] =
-    if square.length != 2 then None
-    else
-      val file = square(0)
-      val rank = square(1)
-      val f = file - 'a'
-      val r = rank - '1'
-      if f >= 0 && f < 8 && r >= 0 && r < 8 then Some((r, f))
-      else None
-
-  def updated(rank: Int, file: Int, p: Option[Piece]): Board =
-    copy(squares = squares.updated(rank, squares(rank).updated(file, p)))
-
-  def move(from: String, to: String): Either[String, Board] =
-    (coords(from), coords(to)) match
-      case (Some((fr, ff)), Some((tr, tf))) =>
-        pieceAt(fr, ff) match
-          case None => Left(s"no piece at $from")
+  def toFenPlacement: String =
+    (7 to 0 by -1).map { rank =>
+      val row = (0 until 8).foldLeft((new StringBuilder, 0)) { case ((sb, empties), file) =>
+        pieceAt(Pos(rank, file)) match
           case Some(piece) =>
-            if !isInside(tr, tf) then Left("target off board")
-            else if !validDestination(piece, fr, ff, tr, tf) then Left("illegal move for piece")
-            else if pieceAt(tr, tf).exists(_.color == piece.color) then Left("cannot capture own piece")
-            else
-              val intermediate = updated(fr, ff, None)
-              Right(intermediate.updated(tr, tf, Some(piece)))
-      case _ => Left(s"invalid positions: $from -> $to")
-
-  def isInside(r: Int, f: Int): Boolean = r >= 0 && r < 8 && f >= 0 && f < 8
-
-  def isEmpty(r: Int, f: Int): Boolean =
-    isInside(r, f) && pieceAt(r, f).isEmpty
-
-  def isEnemy(r: Int, f: Int, color: Color): Boolean =
-    pieceAt(r, f).exists(_.color != color)
-
-  def clearPath(fr: Int, ff: Int, tr: Int, tf: Int): Boolean =
-    val dr = Integer.signum(tr - fr)
-    val df = Integer.signum(tf - ff)
-    Iterator.iterate((fr + dr, ff + df))(p => (p._1 + dr, p._2 + df))
-      .takeWhile(p => p != (tr, tf))
-      .forall((r, f) => isEmpty(r, f))
-
-  def validDestination(piece: Piece, fr: Int, ff: Int, tr: Int, tf: Int): Boolean =
-    piece.tpe match
-      case PieceType.Pawn =>
-        val dir = if piece.color == Color.White then 1 else -1
-        (tf == ff && tr == fr + dir && isEmpty(tr, tf)) ||
-        (tf == ff && tr == fr + 2*dir && fr == (if piece.color == Color.White then 1 else 6) && isEmpty(fr+dir, ff) && isEmpty(tr, tf)) ||
-        (math.abs(tf - ff) == 1 && tr == fr + dir && isEnemy(tr, tf, piece.color))
-      case PieceType.Knight =>
-        val dr = math.abs(tr - fr); val df = math.abs(tf - ff)
-        (dr == 2 && df == 1) || (dr == 1 && df == 2)
-      case PieceType.Bishop =>
-        math.abs(tr - fr) == math.abs(tf - ff) && clearPath(fr, ff, tr, tf)
-      case PieceType.Rook =>
-        (fr == tr || ff == tf) && clearPath(fr, ff, tr, tf)
-      case PieceType.Queen =>
-        (fr == tr || ff == tf || math.abs(tr - fr) == math.abs(tf - ff)) && clearPath(fr, ff, tr, tf)
-      case PieceType.King =>
-        math.max(math.abs(tr - fr), math.abs(tf - ff)) == 1 
-  
-  def hasKing(color: Color): Boolean =
-    squares.exists(_.exists(_.contains(Piece(color, PieceType.King))))
+            if empties > 0 then sb.append(empties)
+            sb.append(piece.fenChar)
+            (sb, 0)
+          case None =>
+            (sb, empties + 1)
+      }
+      val (sb, empties) = row
+      if empties > 0 then sb.append(empties)
+      sb.toString
+    }.mkString("/")
 
 object Board:
+  val empty: Board = Board(Vector.fill(8, 8)(None))
+
   def initial: Board =
     def pawnRow(color: Color) = Vector.fill(8)(Some(Piece(color, PieceType.Pawn)))
     def backRow(color: Color) = Vector(
@@ -94,14 +79,15 @@ object Board:
       Some(Piece(color, PieceType.Knight)),
       Some(Piece(color, PieceType.Rook))
     )
-    val rows = Vector(
-      backRow(Color.White),
-      pawnRow(Color.White),
-      Vector.fill(8)(None),
-      Vector.fill(8)(None),
-      Vector.fill(8)(None),
-      Vector.fill(8)(None),
-      pawnRow(Color.Black),
-      backRow(Color.Black)
+    Board(
+      Vector(
+        backRow(Color.White),
+        pawnRow(Color.White),
+        Vector.fill(8)(None),
+        Vector.fill(8)(None),
+        Vector.fill(8)(None),
+        Vector.fill(8)(None),
+        pawnRow(Color.Black),
+        backRow(Color.Black)
+      )
     )
-    Board(rows)

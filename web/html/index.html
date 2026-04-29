@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>AlmaChess — Test Frontend</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>AlmaChess</h1>
+    <div class="meta">
+      <span><strong>Status:</strong> <span id="status">—</span></span>
+    </div>
+    <div id="health" class="health">
+      <span data-svc="api">API</span>
+      <span data-svc="notation">Notation</span>
+      <span data-svc="ai">AI</span>
+      <span data-svc="stockfish" id="stockfish-badge">Stockfish —</span>
+      <span data-svc="db" id="db-badge">DB —</span>
+      <span data-svc="redis" id="redis-badge">Redis —</span>
+      <button id="btn-fish-menu" class="icon-btn" title="Stockfish-Einstellungen" aria-haspopup="true" aria-expanded="false">🐟</button>
+      <button id="btn-db-menu" class="icon-btn" title="Datenbank-Menü" aria-haspopup="true" aria-expanded="false">⚙</button>
+    </div>
+    <div id="fish-menu" class="db-menu fish-menu" hidden>
+      <div class="db-menu-header">
+        <strong>Stockfish</strong>
+        <span class="db-menu-backend">Engine: <span id="fish-engine-name">—</span></span>
+      </div>
+      <div class="db-menu-row">
+        <span>Modus</span>
+        <div class="fish-mode-row">
+          <label><input type="radio" name="fish-mode" value="depth" checked /> Tiefe</label>
+          <label><input type="radio" name="fish-mode" value="movetime" /> Zeit (ms)</label>
+        </div>
+      </div>
+      <label class="db-menu-row">Tiefe
+        <input id="fish-depth" type="number" min="1" max="30" value="12" />
+      </label>
+      <label class="db-menu-row">Zeit pro Zug (ms)
+        <input id="fish-movetime" type="number" min="50" max="60000" step="50" value="500" />
+      </label>
+      <label class="db-menu-row">Skill Level (0–20)
+        <input id="fish-skill" type="number" min="0" max="20" value="20" />
+      </label>
+      <label class="db-autosave-toggle">
+        <input id="chk-fish-auto" type="checkbox" /> Automatisch nach eigenem Zug spielen
+      </label>
+      <div class="db-menu-row">
+        <span>Spielerfarbe (für Auto-Modus)</span>
+        <div class="fish-mode-row">
+          <label><input type="radio" name="fish-color" value="white" checked /> Weiß</label>
+          <label><input type="radio" name="fish-color" value="black" /> Schwarz</label>
+        </div>
+      </div>
+    </div>
+
+    <div id="db-menu" class="db-menu" hidden>
+      <div class="db-menu-header">
+        <strong>Datenbank</strong>
+        <span class="db-menu-backend">Aktive DB: <span id="db-menu-backend">—</span></span>
+      </div>
+      <label class="db-menu-row">Game ID
+        <input id="db-game-id" type="text" placeholder="z.B. partie-1" />
+      </label>
+      <div class="db-menu-buttons">
+        <button id="btn-db-save">Speichern</button>
+        <button id="btn-db-load">Laden</button>
+        <button id="btn-db-delete">Löschen</button>
+        <button id="btn-db-list">Aktualisieren</button>
+      </div>
+      <div class="db-menu-list-label">Gespeicherte Partien</div>
+      <ul id="db-list" class="db-list"></ul>
+
+      <hr class="db-menu-sep" />
+
+      <div class="db-menu-header">
+        <strong>Live Autosave</strong>
+        <span class="db-menu-backend">
+          <span id="live-backend">—</span>
+          <span id="live-ttl" class="db-menu-ttl"></span>
+        </span>
+      </div>
+      <label class="db-menu-row">Session ID
+        <input id="live-session-id" type="text" placeholder="z.B. browser-session-1" value="browser-session-1" />
+      </label>
+      <div class="db-menu-buttons">
+        <button id="btn-live-save">Live speichern</button>
+        <button id="btn-live-load">Live laden</button>
+        <button id="btn-live-delete">Live löschen</button>
+        <label class="db-autosave-toggle">
+          <input id="chk-live-autosave" type="checkbox" /> Autosave nach Zug
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <aside class="log-col">
+      <div class="panel log-panel">
+        <h2>Log</h2>
+        <pre id="log"></pre>
+      </div>
+    </aside>
+
+    <section class="board-col">
+      <div id="board" aria-label="Chessboard"></div>
+    </section>
+
+    <aside class="controls-col">
+      <div class="panel">
+        <h2>Spielsteuerung</h2>
+        <div class="buttons">
+          <button id="btn-reset">Neues Spiel</button>
+          <button id="btn-undo">Undo</button>
+          <button id="btn-redo">Redo</button>
+        </div>
+        <div class="ai-row">
+          <label>AI-Tiefe
+            <input id="ai-depth" type="number" min="1" max="6" value="2" />
+          </label>
+          <button id="btn-ai">AI ziehen</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>FEN</h2>
+        <textarea id="fen-input" rows="2"
+          placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"></textarea>
+        <div class="buttons">
+          <button id="btn-fen-copy">Kopieren</button>
+          <button id="btn-fen-load">Laden</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>PGN</h2>
+        <textarea id="pgn-input" rows="4" placeholder="1. e4 e5 2. Nf3 Nc6 *"></textarea>
+        <div class="buttons">
+          <button id="btn-pgn-copy">Kopieren</button>
+          <button id="btn-pgn-load">Laden</button>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
