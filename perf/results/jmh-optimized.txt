@@ -1,0 +1,203 @@
+# JMH version: 1.37
+# VM version: JDK 22.0.1, Java HotSpot(TM) 64-Bit Server VM, 22.0.1+8-16
+# VM invoker: C:\Program Files\Java\jdk-22\bin\java.exe
+# VM options: -XX:+UseG1GC -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 2 s each
+# Measurement: 5 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseEmpty
+
+# Run progress: 0.00% complete, ETA 00:01:36
+# Fork: 1 of 1
+# Warmup Iteration   1: 0.365 ops/us
+# Warmup Iteration   2: 0.570 ops/us
+# Warmup Iteration   3: 0.532 ops/us
+Iteration   1: 0.589 ops/us
+Iteration   2: 0.597 ops/us
+Iteration   3: 0.549 ops/us
+Iteration   4: 0.600 ops/us
+Iteration   5: 0.592 ops/us
+
+
+Result "de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseEmpty":
+  0.586 ±(99.9%) 0.081 ops/us [Average]
+  (min, avg, max) = (0.549, 0.586, 0.600), stdev = 0.021
+  CI (99.9%): [0.505, 0.666] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 22.0.1, Java HotSpot(TM) 64-Bit Server VM, 22.0.1+8-16
+# VM invoker: C:\Program Files\Java\jdk-22\bin\java.exe
+# VM options: -XX:+UseG1GC -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 2 s each
+# Measurement: 5 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseMid
+
+# Run progress: 16.67% complete, ETA 00:01:23
+# Fork: 1 of 1
+# Warmup Iteration   1: 0.300 ops/us
+# Warmup Iteration   2: 0.471 ops/us
+# Warmup Iteration   3: 0.464 ops/us
+Iteration   1: 0.468 ops/us
+Iteration   2: 0.491 ops/us
+Iteration   3: 0.465 ops/us
+Iteration   4: 0.492 ops/us
+Iteration   5: 0.500 ops/us
+
+
+Result "de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseMid":
+  0.483 ±(99.9%) 0.061 ops/us [Average]
+  (min, avg, max) = (0.465, 0.483, 0.500), stdev = 0.016
+  CI (99.9%): [0.423, 0.544] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 22.0.1, Java HotSpot(TM) 64-Bit Server VM, 22.0.1+8-16
+# VM invoker: C:\Program Files\Java\jdk-22\bin\java.exe
+# VM options: -XX:+UseG1GC -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 2 s each
+# Measurement: 5 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Throughput, ops/time
+# Benchmark: de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseStart
+
+# Run progress: 33.33% complete, ETA 00:01:06
+# Fork: 1 of 1
+# Warmup Iteration   1: 0.215 ops/us
+# Warmup Iteration   2: 0.470 ops/us
+# Warmup Iteration   3: 0.500 ops/us
+Iteration   1: 0.354 ops/us
+Iteration   2: 0.457 ops/us
+Iteration   3: 0.440 ops/us
+Iteration   4: 0.439 ops/us
+Iteration   5: 0.493 ops/us
+
+
+Result "de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseStart":
+  0.437 ±(99.9%) 0.197 ops/us [Average]
+  (min, avg, max) = (0.354, 0.437, 0.493), stdev = 0.051
+  CI (99.9%): [0.240, 0.634] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 22.0.1, Java HotSpot(TM) 64-Bit Server VM, 22.0.1+8-16
+# VM invoker: C:\Program Files\Java\jdk-22\bin\java.exe
+# VM options: -XX:+UseG1GC -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 2 s each
+# Measurement: 5 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseEmpty
+
+# Run progress: 50.00% complete, ETA 00:00:50
+# Fork: 1 of 1
+# Warmup Iteration   1: 3.078 us/op
+# Warmup Iteration   2: 1.905 us/op
+# Warmup Iteration   3: 1.831 us/op
+Iteration   1: 1.789 us/op
+Iteration   2: 1.773 us/op
+Iteration   3: 1.647 us/op
+Iteration   4: 1.791 us/op
+Iteration   5: 1.775 us/op
+
+
+Result "de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseEmpty":
+  1.755 ±(99.9%) 0.234 us/op [Average]
+  (min, avg, max) = (1.647, 1.755, 1.791), stdev = 0.061
+  CI (99.9%): [1.521, 1.989] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 22.0.1, Java HotSpot(TM) 64-Bit Server VM, 22.0.1+8-16
+# VM invoker: C:\Program Files\Java\jdk-22\bin\java.exe
+# VM options: -XX:+UseG1GC -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 2 s each
+# Measurement: 5 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseMid
+
+# Run progress: 66.67% complete, ETA 00:00:33
+# Fork: 1 of 1
+# Warmup Iteration   1: 3.419 us/op
+# Warmup Iteration   2: 2.555 us/op
+# Warmup Iteration   3: 2.177 us/op
+Iteration   1: 2.180 us/op
+Iteration   2: 2.322 us/op
+Iteration   3: 2.210 us/op
+Iteration   4: 3.494 us/op
+Iteration   5: 3.517 us/op
+
+
+Result "de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseMid":
+  2.744 ±(99.9%) 2.682 us/op [Average]
+  (min, avg, max) = (2.180, 2.744, 3.517), stdev = 0.697
+  CI (99.9%): [0.062, 5.427] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 22.0.1, Java HotSpot(TM) 64-Bit Server VM, 22.0.1+8-16
+# VM invoker: C:\Program Files\Java\jdk-22\bin\java.exe
+# VM options: -XX:+UseG1GC -Xms512m -Xmx512m
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 2 s each
+# Measurement: 5 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseStart
+
+# Run progress: 83.33% complete, ETA 00:00:16
+# Fork: 1 of 1
+# Warmup Iteration   1: 5.866 us/op
+# Warmup Iteration   2: 2.714 us/op
+# Warmup Iteration   3: 3.044 us/op
+Iteration   1: 2.832 us/op
+Iteration   2: 4.290 us/op
+Iteration   3: 3.989 us/op
+Iteration   4: 3.045 us/op
+Iteration   5: 2.468 us/op
+
+
+Result "de.htwg.softwarearchitecture.almachess.bench.FenParserBench.parseStart":
+  3.325 ±(99.9%) 3.000 us/op [Average]
+  (min, avg, max) = (2.468, 3.325, 4.290), stdev = 0.779
+  CI (99.9%): [0.324, 6.325] (assumes normal distribution)
+
+
+# Run complete. Total time: 00:01:40
+
+REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+experiments, perform baseline and negative tests that provide experimental control, make sure
+the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+Do not assume the numbers tell you what you want them to tell.
+
+NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+extra caution when trusting the results, look into the generated code to check the benchmark still
+works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+different JVMs are already problematic, the performance difference caused by different Blackhole
+modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+
+Benchmark                   Mode  Cnt  Score   Error   Units
+FenParserBench.parseEmpty  thrpt    5  0.586 ± 0.081  ops/us
+FenParserBench.parseMid    thrpt    5  0.483 ± 0.061  ops/us
+FenParserBench.parseStart  thrpt    5  0.437 ± 0.197  ops/us
+FenParserBench.parseEmpty   avgt    5  1.755 ± 0.234   us/op
+FenParserBench.parseMid     avgt    5  2.744 ± 2.682   us/op
+FenParserBench.parseStart   avgt    5  3.325 ± 3.000   us/op
+
+Benchmark result is saved to C:\Users\leo11\OneDrive\Desktop\HTWG\AIN\Semester6\SoftwareArchitektur\almachess\perf\results/jmh-optimized.json

@@ -77,9 +77,33 @@ main {
   display: flex;
   align-items: stretch;
   justify-content: center;
+  gap: 0.4rem;
   min-height: 0;
   padding: 1rem 0.25rem;
 }
+
+.captures-col-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 2.6rem;
+  flex: 0 0 auto;
+}
+
+.captures-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.1rem;
+  font-size: 1.5rem;
+  line-height: 1;
+  min-height: 1.5rem;
+  user-select: none;
+}
+.captures-row.piece-white { color: #ffffff; text-shadow: 0 0 2px #000, 1px 0 1px #000, -1px 0 1px #000, 0 1px 1px #000, 0 -1px 1px #000; }
+.captures-row.piece-black { color: #111111; text-shadow: 0 1px 1px rgba(255,255,255,0.15); }
+#captures-bottom { align-content: flex-end; }
 
 .icon-btn {
   background: var(--panel);
@@ -184,6 +208,9 @@ main {
 }
 .sq.light { background: var(--light); }
 .sq.dark  { background: var(--dark); }
+
+.sq.last-move.light { background: #f0d885; }
+.sq.last-move.dark  { background: #a89a3f; }
 
 .sq[draggable="true"] { cursor: grab; }
 .sq[draggable="true"]:active { cursor: grabbing; }

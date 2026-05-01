@@ -32,3 +32,28 @@ lazy val root = (project in file("."))
     Compile / run / connectInput := true,
     evictionErrorLevel := Level.Warn
   )
+
+// JMH micro-benchmarks. Depends on root so we can benchmark FenParser directly.
+lazy val bench = (project in file("bench"))
+  .enablePlugins(JmhPlugin)
+  .dependsOn(root)
+  .settings(
+    name := "almachess-bench",
+    scalaVersion := "3.3.1",
+    publish / skip := true,
+    Jmh / fork := true
+  )
+
+// Gatling load tests. Separate subproject so its Scala 2.13 / akka transitive deps
+// don't collide with the Scala 3 main build.
+lazy val gatlingTests = (project in file("perf/gatling"))
+  .enablePlugins(GatlingPlugin)
+  .settings(
+    name := "almachess-gatling",
+    scalaVersion := "2.13.14",
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      "io.gatling.highcharts" % "gatling-charts-highcharts" % "3.11.5" % "test",
+      "io.gatling"            % "gatling-test-framework"    % "3.11.5" % "test"
+    )
+  )

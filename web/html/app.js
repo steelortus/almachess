@@ -10,11 +10,16 @@ const PIECE_GLYPHS = {
 };
 
 const FILES = ["a","b","c","d","e","f","g","h"];
+const STARTING_COUNTS = { P:8, N:2, B:2, R:2, Q:1, p:8, n:2, b:2, r:2, q:1 };
+// Order in which captured pieces are listed (lowest value first).
+const CAPTURE_ORDER = ["p","n","b","r","q"];
 const boardEl  = document.getElementById("board");
 const fenEl    = document.getElementById("fen-input");
 const pgnEl    = document.getElementById("pgn-input");
 const statusEl = document.getElementById("status");
 const logEl    = document.getElementById("log");
+const capturesTopEl    = document.getElementById("captures-top");
+const capturesBottomEl = document.getElementById("captures-bottom");
 
 let selected = null;          // algebraic square, e.g. "e2"
 let legalTargets = new Set(); // destinations for the selected square
@@ -111,6 +116,24 @@ function renderBoard() {
       if (piece) cell.classList.add("capture");
     }
   }
+  renderCaptures();
+}
+
+function renderCaptures() {
+  const counts = {};
+  for (const piece of Object.values(currentBoard)) {
+    counts[piece] = (counts[piece] || 0) + 1;
+  }
+  // Missing pieces relative to the starting position = pieces that have been
+  // captured. Promotions can yield a negative diff; clamp to zero.
+  const missing = (p) => Math.max(0, (STARTING_COUNTS[p] || 0) - (counts[p] || 0));
+
+  // Top row above the board: black pieces that white has captured.
+  // Bottom row below the board: white pieces that black has captured.
+  const blackLost = CAPTURE_ORDER.flatMap(t => Array(missing(t)).fill(PIECE_GLYPHS[t]));
+  const whiteLost = CAPTURE_ORDER.flatMap(t => Array(missing(t.toUpperCase())).fill(PIECE_GLYPHS[t]));
+  capturesTopEl.textContent    = blackLost.join("");
+  capturesBottomEl.textContent = whiteLost.join("");
 }
 
 // ---------- state updates --------------------------------------------------
