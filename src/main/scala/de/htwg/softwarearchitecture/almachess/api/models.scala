@@ -46,6 +46,14 @@ case class BestMoveRequest(
     skill: Option[Int] = None
 )
 case class BestMoveResponse(move: Option[String], error: Option[String] = None)
+case class EvaluateRequest(fen: String, depth: Option[Int] = None)
+case class EvaluateResponse(
+    centipawns: Option[Int]    = None,
+    mate:       Option[Int]    = None,
+    bestMove:   Option[String] = None,
+    depth:      Option[Int]    = None,
+    error:      Option[String] = None
+)
 case class AiStatusResponse(
     enabled: Boolean,
     backend: String,
@@ -101,6 +109,8 @@ object JsonFormats extends DefaultJsonProtocol:
   given RootJsonFormat[PgnParseResponse]    = jsonFormat2(PgnParseResponse.apply)
   given RootJsonFormat[BestMoveRequest]     = jsonFormat4(BestMoveRequest.apply)
   given RootJsonFormat[BestMoveResponse]    = jsonFormat2(BestMoveResponse.apply)
+  given RootJsonFormat[EvaluateRequest]     = jsonFormat2(EvaluateRequest.apply)
+  given RootJsonFormat[EvaluateResponse]    = jsonFormat5(EvaluateResponse.apply)
   given RootJsonFormat[AiStatusResponse]    = jsonFormat4(AiStatusResponse.apply)
 
   given RootJsonFormat[PersistenceGameDto]        = jsonFormat7(PersistenceGameDto.apply)

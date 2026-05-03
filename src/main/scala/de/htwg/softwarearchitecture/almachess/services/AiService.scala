@@ -73,6 +73,26 @@ object AiService:
                       case Some(m) => complete(BestMoveResponse(Some(AiClient.moveToUci(m)), None))
           }
         }
+      },
+      path("ai" / "evaluate") {
+        post {
+          entity(as[EvaluateRequest]) { req =>
+            stockfish match
+              case Some(engine) if engine.isAlive =>
+                engine.evaluate(req.fen, req.depth) match
+                  case Right(ev) => complete(EvaluateResponse(
+                    centipawns = ev.centipawns,
+                    mate       = ev.mate,
+                    bestMove   = ev.bestMove,
+                    depth      = Some(ev.depth)
+                  ))
+                  case Left(err) => complete(StatusCodes.UnprocessableEntity ->
+                    EvaluateResponse(error = Some(err)))
+              case _ =>
+                complete(StatusCodes.NotImplemented ->
+                  EvaluateResponse(error = Some("evaluate requires Stockfish")))
+          }
+        }
       }
     )
 

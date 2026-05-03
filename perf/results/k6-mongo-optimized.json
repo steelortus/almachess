@@ -1,0 +1,270 @@
+{
+    "root_group": {
+        "groups": {
+            "POST /games/{id}": {
+                "id": "8cae3c0a4035557e873687417e55cb42",
+                "groups": {},
+                "checks": {
+                        "POST 200": {
+                            "id": "bfb84c0edbdf6ef2d57aeea0b8c808f5",
+                            "passes": 650,
+                            "fails": 0,
+                            "name": "POST 200",
+                            "path": "::POST /games/{id}::POST 200"
+                        }
+                    },
+                "name": "POST /games/{id}",
+                "path": "::POST /games/{id}"
+            },
+            "GET /games/{id}": {
+                "name": "GET /games/{id}",
+                "path": "::GET /games/{id}",
+                "id": "07edce38a76ca4c1e7075c334cfaa933",
+                "groups": {},
+                "checks": {
+                        "GET 200": {
+                            "id": "513c59a6b690e94621b05ecc8a5a11bf",
+                            "passes": 4095,
+                            "fails": 0,
+                            "name": "GET 200",
+                            "path": "::GET /games/{id}::GET 200"
+                        }
+                    }
+            },
+            "GET /games (list)": {
+                "checks": {
+                    "LIST 200": {
+                        "path": "::GET /games (list)::LIST 200",
+                        "id": "1950b488cfc2a4ff52d30ac342f1f14c",
+                        "passes": 1682,
+                        "fails": 0,
+                        "name": "LIST 200"
+                    },
+                    "LIST has games": {
+                        "name": "LIST has games",
+                        "path": "::GET /games (list)::LIST has games",
+                        "id": "30b644738c14e80317b384ad7b268951",
+                        "passes": 1682,
+                        "fails": 0
+                    }
+                },
+                "name": "GET /games (list)",
+                "path": "::GET /games (list)",
+                "id": "b208f5a46cf0c25591bd1f81bb79ea9a",
+                "groups": {}
+            },
+            "DELETE /games/{id} + restore": {
+                "name": "DELETE /games/{id} + restore",
+                "path": "::DELETE /games/{id} + restore",
+                "id": "495cc55d87e47c5f81b53c69001abc07",
+                "groups": {},
+                "checks": {
+                        "DELETE 200": {
+                            "id": "329a8949d5806e7613c8e026e0709d02",
+                            "passes": 340,
+                            "fails": 0,
+                            "name": "DELETE 200",
+                            "path": "::DELETE /games/{id} + restore::DELETE 200"
+                        }
+                    }
+            }
+        },
+        "checks": {},
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    "metrics": {
+        "mongo_list_latency": {
+            "p(90)": 127.72430840000004,
+            "p(95)": 148.47512569999992,
+            "p(99)": 215.46614143000005,
+            "max": 293.508661,
+            "avg": 79.2947351070156,
+            "min": 9.523284,
+            "med": 72.1443365,
+            "thresholds": {
+                "p(95)<800": false,
+                "p(99)<1500": false
+            }
+        },
+        "mongo_post_upsert_latency": {
+            "p(90)": 227.4718137,
+            "p(95)": 256.2217583,
+            "p(99)": 361.3516359999999,
+            "max": 635.066151,
+            "avg": 143.48410392615378,
+            "min": 30.377815,
+            "med": 136.16459,
+            "thresholds": {
+                "p(95)<300": false,
+                "p(99)<800": false
+            }
+        },
+        "http_req_tls_handshaking": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0
+        },
+        "http_req_receiving": {
+            "avg": 0.32420988998311756,
+            "min": 0.027797,
+            "med": 0.10469,
+            "p(90)": 0.6799170000000001,
+            "p(95)": 1.469650499999998,
+            "p(99)": 4.161805190000008,
+            "max": 39.126869
+        },
+        "data_sent": {
+            "rate": 18526.081866429384,
+            "count": 835984
+        },
+        "http_req_duration": {
+            "avg": 125.98100225647157,
+            "min": 7.046861,
+            "med": 115.7231355,
+            "p(90)": 209.66076300000003,
+            "p(95)": 243.81712919999998,
+            "p(99)": 326.1332642600001,
+            "max": 746.92325
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 746.92325,
+            "avg": 125.98100225647157,
+            "min": 7.046861,
+            "med": 115.7231355,
+            "p(90)": 209.66076300000003,
+            "p(95)": 243.81712919999998,
+            "p(99)": 326.1332642600001
+        },
+        "mongo_request_failures": {
+            "passes": 0,
+            "fails": 6767,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "iterations": {
+            "count": 6767,
+            "rate": 149.96219543690745
+        },
+        "http_reqs": {
+            "count": 7108,
+            "rate": 157.51903135296854
+        },
+        "data_received": {
+            "count": 10693296,
+            "rate": 236972.09171223594
+        },
+        "mongo_get_by_id_latency": {
+            "min": 18.220537,
+            "med": 136.412486,
+            "p(90)": 224.6838096,
+            "p(95)": 261.32085839999996,
+            "p(99)": 340.50038777999987,
+            "max": 746.92325,
+            "avg": 145.46414256434682,
+            "thresholds": {
+                "p(95)<200": true,
+                "p(99)<500": false
+            }
+        },
+        "checks": {
+            "passes": 8449,
+            "fails": 0,
+            "value": 1
+        },
+        "http_req_sending": {
+            "avg": 0.04150423958919522,
+            "min": 0.010099,
+            "med": 0.0199965,
+            "p(90)": 0.0738886,
+            "p(95)": 0.08575369999999996,
+            "p(99)": 0.30704568000000004,
+            "max": 9.820114
+        },
+        "http_req_waiting": {
+            "p(90)": 209.4947613,
+            "p(95)": 243.65147785,
+            "p(99)": 325.96505963000004,
+            "max": 746.807164,
+            "avg": 125.61528812689907,
+            "min": 6.918174,
+            "med": 115.306812
+        },
+        "http_req_blocked": {
+            "med": 0.007599,
+            "p(90)": 0.010898,
+            "p(95)": 0.013098,
+            "p(99)": 0.11489407000000082,
+            "max": 43.543661,
+            "avg": 0.06944623790095657,
+            "min": 0.0029
+        },
+        "vus_max": {
+            "value": 20,
+            "min": 20,
+            "max": 20
+        },
+        "mongo_delete_latency": {
+            "avg": 73.47616026470592,
+            "min": 7.046861,
+            "med": 66.9051205,
+            "p(90)": 116.5763418000001,
+            "p(95)": 151.13484515000002,
+            "p(99)": 181.17077075000003,
+            "max": 227.303074,
+            "thresholds": {
+                "p(95)<300": false
+            }
+        },
+        "group_duration": {
+            "p(95)": 257.32847069999997,
+            "p(99)": 346.83584196000004,
+            "max": 768.255733,
+            "avg": 133.0094406310031,
+            "min": 10.235471,
+            "med": 122.28389,
+            "p(90)": 220.84269520000004
+        },
+        "http_req_connecting": {
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 27.087903,
+            "avg": 0.05019562366347778
+        },
+        "iteration_duration": {
+            "p(95)": 257.4092922,
+            "p(99)": 346.8857783,
+            "max": 768.377718,
+            "avg": 133.0994373184578,
+            "min": 10.270965,
+            "med": 122.413339,
+            "p(90)": 220.89521960000008
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 7108,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "vus": {
+            "value": 20,
+            "min": 20,
+            "max": 20
+        }
+    },
+    "setup_data": {
+        "base": "http://host.docker.internal:8083"
+    }
+}

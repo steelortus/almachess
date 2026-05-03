@@ -4,13 +4,18 @@
   <meta charset="utf-8" />
   <title>AlmaChess — Test Frontend</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260503-12" />
 </head>
 <body>
   <header>
     <h1>AlmaChess</h1>
     <div class="meta">
       <span><strong>Status:</strong> <span id="status">—</span></span>
+      <span id="analysis-line" class="analysis-line" hidden>
+        <span class="analysis-eval" id="analysis-eval">—</span>
+        <span class="analysis-best" id="analysis-best"></span>
+        <span class="analysis-class" id="analysis-class"></span>
+      </span>
     </div>
     <div id="health" class="health">
       <span data-svc="api">API</span>
@@ -20,39 +25,134 @@
       <span data-svc="db" id="db-badge">DB —</span>
       <span data-svc="redis" id="redis-badge">Redis —</span>
       <button id="btn-fish-menu" class="icon-btn" title="Stockfish-Einstellungen" aria-haspopup="true" aria-expanded="false">🐟</button>
+      <button id="btn-time-menu" class="icon-btn" title="Zeitmodus" aria-haspopup="true" aria-expanded="false">⚡</button>
+      <button id="btn-theme-menu" class="icon-btn" title="Brett-Theme" aria-haspopup="true" aria-expanded="false">🎨</button>
+      <button id="btn-sound-menu" class="icon-btn" title="Sounds" aria-haspopup="true" aria-expanded="false">🔊</button>
+      <button id="btn-analysis-toggle" class="icon-btn analysis-off" title="Analyse ein/aus" aria-pressed="false">🔍</button>
       <button id="btn-db-menu" class="icon-btn" title="Datenbank-Menü" aria-haspopup="true" aria-expanded="false">⚙</button>
+    </div>
+
+    <div id="theme-menu" class="db-menu theme-menu" hidden>
+      <div class="db-menu-header">
+        <strong>Brett-Theme</strong>
+        <span class="db-menu-backend">Aktiv: <span id="theme-active-name">—</span></span>
+      </div>
+      <div class="theme-presets" id="theme-presets"></div>
+    </div>
+
+    <div id="sound-menu" class="db-menu sound-menu" hidden>
+      <div class="db-menu-header">
+        <strong>Sounds</strong>
+        <span class="db-menu-backend"><span id="sound-status">—</span></span>
+      </div>
+      <label class="db-autosave-toggle">
+        <input id="chk-sound-enabled" type="checkbox" /> Sounds aktiv
+      </label>
+      <label class="db-menu-row">Lautstärke
+        <input id="sound-volume" type="range" min="0" max="100" step="1" value="60" />
+      </label>
+      <div class="fish-advanced-buttons">
+        <button id="btn-sound-test" type="button">Test</button>
+      </div>
+      <div class="fish-advanced-hint">
+        Lädt MP3s aus <em>assets/sounds/</em>. Wenn Datei fehlt, spielt ein
+        synthetischer Beep als Fallback.
+      </div>
+    </div>
+
+    <div id="time-menu" class="db-menu time-menu" hidden>
+      <div class="db-menu-header">
+        <strong>Zeitmodus</strong>
+        <span class="db-menu-backend">Aktiv: <span id="time-active-name">Ohne Uhr</span></span>
+      </div>
+      <div class="time-presets" id="time-presets"></div>
+
+      <details id="time-custom" class="fish-advanced">
+        <summary>Benutzerdefiniert</summary>
+        <div class="fish-advanced-body">
+          <label class="db-menu-row">Startzeit (Minuten)
+            <input id="time-custom-base" type="number" min="0" max="180" step="1" value="5" />
+          </label>
+          <label class="db-menu-row">Inkrement (Sekunden)
+            <input id="time-custom-inc" type="number" min="0" max="60" step="1" value="0" />
+          </label>
+          <div class="fish-advanced-buttons">
+            <button id="btn-time-custom-apply" type="button" class="primary">Übernehmen</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="fish-advanced-hint">
+        Stockfish nutzt maximal <strong>restMs / 30 − 200 ms</strong> pro Zug.
+        Neues Spiel setzt die Uhren zurück. Undo lässt die Uhr unverändert.
+      </div>
     </div>
     <div id="fish-menu" class="db-menu fish-menu" hidden>
       <div class="db-menu-header">
         <strong>Stockfish</strong>
         <span class="db-menu-backend">Engine: <span id="fish-engine-name">—</span></span>
       </div>
-      <div class="db-menu-row">
-        <span>Modus</span>
-        <div class="fish-mode-row">
-          <label><input type="radio" name="fish-mode" value="depth" checked /> Tiefe</label>
-          <label><input type="radio" name="fish-mode" value="movetime" /> Zeit (ms)</label>
+
+      <!-- Dashboard: shows what is currently active -->
+      <div id="fish-active" class="fish-active">
+        <div class="fish-active-head">
+          <span id="fish-active-mode" class="fish-active-mode">Preset</span>
+          <span id="fish-active-headline" class="fish-active-headline">ELO 1500</span>
+        </div>
+        <div id="fish-active-detail" class="fish-active-detail">—</div>
+      </div>
+
+      <div class="db-menu-row fish-elo-block">
+        <div class="fish-elo-label">
+          <span>Spielstärke</span>
+          <span class="fish-elo-value"><span id="fish-elo-display">1500</span> ELO</span>
+        </div>
+        <input id="fish-elo-range" class="fish-elo-slider" type="range" min="100" max="3200" step="25" value="1500" />
+        <div class="fish-elo-scale">
+          <span>100</span><span>1000</span><span>2000</span><span>3200</span>
         </div>
       </div>
-      <label class="db-menu-row">Tiefe
-        <input id="fish-depth" type="number" min="1" max="30" value="12" />
-      </label>
-      <label class="db-menu-row">Zeit pro Zug (ms)
-        <input id="fish-movetime" type="number" min="50" max="60000" step="50" value="500" />
-      </label>
-      <label class="db-menu-row">Skill Level (0–20)
-        <input id="fish-skill" type="number" min="0" max="20" value="20" />
-      </label>
+
       <label class="db-autosave-toggle">
-        <input id="chk-fish-auto" type="checkbox" /> Automatisch nach eigenem Zug spielen
+        <input id="chk-fish-auto" type="checkbox" /> Gegen Stockfish spielen
       </label>
       <div class="db-menu-row">
-        <span>Spielerfarbe (für Auto-Modus)</span>
+        <span>Spielerfarbe</span>
         <div class="fish-mode-row">
           <label><input type="radio" name="fish-color" value="white" checked /> Weiß</label>
           <label><input type="radio" name="fish-color" value="black" /> Schwarz</label>
         </div>
       </div>
+
+      <details id="fish-advanced" class="fish-advanced">
+        <summary>Erweiterte Einstellungen</summary>
+        <div class="fish-advanced-body">
+          <div class="fish-advanced-hint">
+            Änderungen sind <em>Entwurf</em>, bis du auf <strong>Übernehmen</strong> klickst.
+          </div>
+          <div class="db-menu-row">
+            <span>Limit-Modus</span>
+            <div class="fish-mode-row">
+              <label><input type="radio" name="fish-mode" value="depth" checked /> Tiefe</label>
+              <label><input type="radio" name="fish-mode" value="movetime" /> Zeit</label>
+            </div>
+          </div>
+          <label class="db-menu-row">Tiefe (1–40)
+            <input id="fish-depth" type="number" min="1" max="40" value="12" />
+          </label>
+          <label class="db-menu-row">Zeit pro Zug (ms, 50–60000)
+            <input id="fish-movetime" type="number" min="50" max="60000" step="50" value="1000" />
+          </label>
+          <label class="db-menu-row">Skill Level (0–20)
+            <input id="fish-skill" type="number" min="0" max="20" value="20" />
+          </label>
+          <div class="fish-advanced-buttons">
+            <button id="btn-fish-apply" type="button" class="primary">Übernehmen</button>
+            <button id="btn-fish-from-elo" type="button">Aus ELO übernehmen</button>
+            <button id="btn-fish-reset" type="button">Zurücksetzen</button>
+          </div>
+        </div>
+      </details>
     </div>
 
     <div id="db-menu" class="db-menu" hidden>
@@ -105,23 +205,45 @@
 
     <section class="board-col">
       <div class="captures-col-inner" aria-label="Geschlagene Figuren">
-        <div id="captures-top"    class="captures-row piece-white"></div>
-        <div id="captures-bottom" class="captures-row piece-black"></div>
+        <div class="captures-block">
+          <div id="captures-top"   class="captures-row piece-white"></div>
+          <span id="material-top"  class="material-score"></span>
+        </div>
+        <div class="captures-block">
+          <span id="material-bottom" class="material-score"></span>
+          <div id="captures-bottom" class="captures-row piece-black"></div>
+        </div>
       </div>
+
       <div id="board" aria-label="Chessboard"></div>
+
+      <aside id="clock-rail" aria-label="Uhren">
+        <div id="clock-top"    class="clock-card" hidden>
+          <span class="clock-label">—</span>
+          <span class="clock-time">--:--</span>
+        </div>
+        <div id="clock-bottom" class="clock-card" hidden>
+          <span class="clock-label">—</span>
+          <span class="clock-time">--:--</span>
+        </div>
+      </aside>
     </section>
 
     <aside class="controls-col">
-      <div class="panel">
+      <div class="panel panel-controls">
         <h2>Spielsteuerung</h2>
         <div class="buttons">
           <button id="btn-reset">Neues Spiel</button>
           <button id="btn-undo">Undo</button>
           <button id="btn-redo">Redo</button>
         </div>
+        <div class="buttons buttons-secondary">
+          <button id="btn-resign" class="danger">Aufgeben</button>
+          <button id="btn-draw">Remis</button>
+        </div>
         <div class="ai-row">
           <label>AI-Tiefe
-            <input id="ai-depth" type="number" min="1" max="6" value="2" />
+            <input id="ai-depth" type="number" min="1" max="30" value="2" />
           </label>
           <button id="btn-ai">AI ziehen</button>
         </div>
@@ -149,6 +271,24 @@
     </aside>
   </main>
 
-  <script src="app.js"></script>
+  <div id="promotion-popup" class="promotion-popup" hidden role="dialog" aria-label="Bauernumwandlung">
+    <button data-promo="q" title="Dame">♛</button>
+    <button data-promo="r" title="Turm">♜</button>
+    <button data-promo="b" title="Läufer">♝</button>
+    <button data-promo="n" title="Springer">♞</button>
+  </div>
+
+  <div id="result-modal" class="modal-backdrop" hidden>
+    <div class="result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title">
+      <h2 id="result-title">—</h2>
+      <p id="result-message">—</p>
+      <div class="result-actions">
+        <button id="btn-result-new" class="primary">Neues Spiel</button>
+        <button id="btn-result-close">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=20260503-12"></script>
 </body>
 </html>
