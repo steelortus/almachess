@@ -14,7 +14,7 @@ object PgnParser:
     P("\"" ~ CharsWhile(_ != '"').! ~ "\"")
 
   private def tag[$: P]: P[(String, String)] =
-    P("[" ~ tagName ~ " " ~ tagValue ~ "]")
+    P("[" ~ tagName ~ tagValue ~ "]")
 
   // Game termination markers: "1-0", "0-1", "1/2-1/2", "*"
   private def result[$: P]: P[Unit] =

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>AlmaChess — Test Frontend</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="styles.css?v=20260503-12" />
+  <link rel="stylesheet" href="styles.css?v=20260503-13" />
 </head>
 <body>
   <header>
@@ -29,6 +29,7 @@
       <button id="btn-theme-menu" class="icon-btn" title="Brett-Theme" aria-haspopup="true" aria-expanded="false">🎨</button>
       <button id="btn-sound-menu" class="icon-btn" title="Sounds" aria-haspopup="true" aria-expanded="false">🔊</button>
       <button id="btn-analysis-toggle" class="icon-btn analysis-off" title="Analyse ein/aus" aria-pressed="false">🔍</button>
+      <button id="btn-puzzle-menu" class="icon-btn" title="Stellung aufbauen" aria-pressed="false">🧩</button>
       <button id="btn-db-menu" class="icon-btn" title="Datenbank-Menü" aria-haspopup="true" aria-expanded="false">⚙</button>
     </div>
 
@@ -197,6 +198,43 @@
 
   <main>
     <aside class="log-col">
+      <div id="setup-panel" class="panel setup-panel" hidden>
+        <h2>Stellung aufbauen</h2>
+        <div class="setup-side-row">
+          <label><input type="radio" name="setup-turn" value="w" checked /> Weiß am Zug</label>
+          <label><input type="radio" name="setup-turn" value="b" /> Schwarz am Zug</label>
+        </div>
+        <div class="setup-palette-label">Weiß</div>
+        <div class="setup-palette" data-color="white">
+          <button class="setup-piece piece-white" data-piece="K" title="König">♚</button>
+          <button class="setup-piece piece-white" data-piece="Q" title="Dame">♛</button>
+          <button class="setup-piece piece-white" data-piece="R" title="Turm">♜</button>
+          <button class="setup-piece piece-white" data-piece="B" title="Läufer">♝</button>
+          <button class="setup-piece piece-white" data-piece="N" title="Springer">♞</button>
+          <button class="setup-piece piece-white" data-piece="P" title="Bauer">♟</button>
+        </div>
+        <div class="setup-palette-label">Schwarz</div>
+        <div class="setup-palette" data-color="black">
+          <button class="setup-piece piece-black" data-piece="k" title="König">♚</button>
+          <button class="setup-piece piece-black" data-piece="q" title="Dame">♛</button>
+          <button class="setup-piece piece-black" data-piece="r" title="Turm">♜</button>
+          <button class="setup-piece piece-black" data-piece="b" title="Läufer">♝</button>
+          <button class="setup-piece piece-black" data-piece="n" title="Springer">♞</button>
+          <button class="setup-piece piece-black" data-piece="p" title="Bauer">♟</button>
+        </div>
+        <div class="setup-palette setup-palette-tools">
+          <button class="setup-piece setup-tool" data-piece="x" title="Feld leeren">🗑️</button>
+        </div>
+        <div class="setup-hint" id="setup-hint">Wähle links eine Figur, klicke aufs Brett. Brett-Figuren per Drag verschieben.</div>
+        <div class="setup-buttons">
+          <button id="btn-setup-empty" type="button">Leeres Brett</button>
+          <button id="btn-setup-start" type="button">Startstellung</button>
+        </div>
+        <div class="setup-buttons">
+          <button id="btn-setup-apply" type="button" class="primary">Übernehmen</button>
+          <button id="btn-setup-cancel" type="button">Abbrechen</button>
+        </div>
+      </div>
       <div class="panel log-panel">
         <h2>Log</h2>
         <pre id="log"></pre>
@@ -289,6 +327,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260503-12"></script>
+  <script src="app.js?v=20260503-13"></script>
 </body>
 </html>

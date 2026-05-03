@@ -431,6 +431,96 @@ textarea {
   flex-direction: column;
   min-height: 0;
 }
+
+.setup-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.setup-panel[hidden] { display: none; }
+.setup-panel h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--fg);
+}
+.setup-side-row {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.setup-palette-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.1rem;
+}
+.setup-palette {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.25rem;
+}
+.setup-palette-tools {
+  grid-template-columns: repeat(6, 1fr);
+}
+.setup-piece {
+  background: #1a1d22;
+  border: 1px solid #3a3f47;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0.3rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+.setup-piece:hover { background: #33383f; }
+.setup-piece.piece-white { color: #ffffff; text-shadow: 0 0 2px #000, 1px 0 1px #000, -1px 0 1px #000, 0 1px 1px #000, 0 -1px 1px #000; }
+.setup-piece.piece-black { color: #111111; text-shadow: 0 1px 1px rgba(255,255,255,0.15); }
+.setup-piece.setup-tool   { color: var(--fg); font-size: 1.1rem; }
+.setup-piece.selected {
+  border-color: var(--ok);
+  background: #1e3a24;
+  box-shadow: 0 0 0 1px var(--ok);
+}
+.setup-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+.setup-hint.err { color: var(--bad); }
+.setup-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+.setup-buttons button {
+  background: #3a3f47;
+  color: var(--fg);
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.setup-buttons button:hover { background: #4a505a; }
+.setup-buttons button.primary {
+  background: #1e6b2a;
+}
+.setup-buttons button.primary:hover { background: #258a36; }
+.setup-buttons button.primary[disabled] {
+  background: #2a3a2c;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+#board.setup-mode .sq { cursor: copy; }
+#board.setup-mode .sq[draggable="true"] { cursor: grab; }
+#board.setup-mode .sq.setup-target { outline: 2px solid var(--ok); outline-offset: -2px; }
 #log {
   margin: 0;
   flex: 1 1 auto;

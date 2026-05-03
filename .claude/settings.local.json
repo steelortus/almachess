@@ -20,7 +20,10 @@
       "Bash(docker info *)",
       "PowerShell(docker compose up -d 2>&1)",
       "Bash(node --check web/html/app.js)",
-      "Bash(sbt --client compile)"
+      "Bash(sbt --client compile)",
+      "Bash(node --check \"c:/Users/leo11/OneDrive/Desktop/HTWG/AIN/Semester6/SoftwareArchitektur/almachess/web/html/app.js\")",
+      "PowerShell(sbt \"testOnly de.htwg.softwarearchitecture.almachess.parser.PgnParserSpec de.htwg.softwarearchitecture.almachess.model.SanSpec\" 2>&1)",
+      "PowerShell(sbt \"testOnly de.htwg.softwarearchitecture.almachess.model.GameStateSpec\" 2>&1)"
     ]
   }
 }

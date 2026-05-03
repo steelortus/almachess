@@ -255,6 +255,7 @@ function stripPgnHeaders(pgn) {
 // ---------- interactions ---------------------------------------------------
 
 async function onSquareClick(sq) {
+  if (setup.active) { setupSquareClick(sq); return; }
   if (selected && legalTargets.has(sq)) {
     if (clockGameOver()) { log("Zug abgelehnt: Zeit abgelaufen", "err"); return; }
     const from = selected;
@@ -285,6 +286,7 @@ function clearSelection() {
 let dragFrom = null;
 
 async function onDragStart(e, sq) {
+  if (setup.active) { setupDragStart(e, sq); return; }
   if (!currentBoard[sq]) { e.preventDefault(); return; }
   dragFrom = sq;
   selected = sq;
@@ -331,6 +333,7 @@ async function onDragStart(e, sq) {
 }
 
 function onDragOver(e, sq) {
+  if (setup.active) { setupDragOver(e); return; }
   if (!dragFrom || !legalTargets.has(sq)) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = "move";
@@ -338,10 +341,12 @@ function onDragOver(e, sq) {
 }
 
 function onDragLeave(e, _sq) {
+  if (setup.active) { setupDragLeave(e); return; }
   e.currentTarget.classList.remove("drop-target");
 }
 
 async function onDrop(e, sq) {
+  if (setup.active) { setupDrop(e, sq); return; }
   e.preventDefault();
   const from = dragFrom || e.dataTransfer.getData("text/plain");
   dragFrom = null;
@@ -399,6 +404,7 @@ function playMoveSound(state, { capture = false, promotion = false } = {}) {
 }
 
 function onDragEnd(_e, _sq) {
+  if (setup.active) { setupDragEnd(); return; }
   dragFrom = null;
   // clear any leftover highlights if drop didn't fire (e.g. dropped off-board)
   for (const cell of boardEl.children) {
@@ -794,6 +800,7 @@ async function liveDelete() {
 }
 
 async function maybeAutosave() {
+  if (setup.active) return;
   if (!liveAutosaveEl.checked || !liveEnabled) return;
   await liveSave(true);
 }
@@ -995,6 +1002,7 @@ function syncStockfishUiState({ trigger = "sync", maybeMove = true } = {}) {
 // ----- auto-AI -------------------------------------------------------------
 let autoAiBusy = false;
 async function maybeAutoAi(reason = "unknown") {
+  if (setup.active) { return; }
   if (autoAiBusy) {
     log(`auto-AI (${reason}): bereits aktiv`);
     return;
@@ -1873,6 +1881,7 @@ function classifyMove(prevCpWhite, currCpWhite, mover) {
 }
 
 async function requestAnalysis(mover) {
+  if (setup.active) return;
   if (!analysis.enabled) return;
   if (!stockfishActive) {
     analysisEvalEl.textContent = "Stockfish n/a";
@@ -1942,6 +1951,313 @@ async function pingHealth() {
     }
   }
 }
+
+// ---------- setup mode (puzzle) -------------------------------------------
+
+const setupPanelEl   = document.getElementById("setup-panel");
+const setupHintEl    = document.getElementById("setup-hint");
+const setupApplyBtn  = document.getElementById("btn-setup-apply");
+const setupCancelBtn = document.getElementById("btn-setup-cancel");
+const setupEmptyBtn  = document.getElementById("btn-setup-empty");
+const setupStartBtn  = document.getElementById("btn-setup-start");
+const puzzleToggleEl = document.getElementById("btn-puzzle-menu");
+
+const STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+const setup = {
+  active: false,
+  board: {},                // sq -> piece char
+  paletteSelection: null,   // piece char or "x" (delete) or null
+  snapshot: null,           // { fen, autoPlay, autoSave, analysisOn } before entering
+  dragFrom: null,           // source square during board-internal drag
+};
+
+function enterSetupMode() {
+  if (setup.active) return;
+  setup.snapshot = {
+    fen: ((fenEl.value || "").trim()) || STARTING_FEN,
+    autoPlay: !!stockfishUi.autoPlay,
+    autoSave: !!(liveAutosaveEl && liveAutosaveEl.checked),
+    analysisOn: !!analysis.enabled,
+  };
+  setup.active = true;
+  if (fishAutoEl) fishAutoEl.checked = false;
+  stockfishUi.autoPlay = false;
+  if (liveAutosaveEl) liveAutosaveEl.checked = false;
+  if (analysis.enabled) setAnalysisEnabled(false);
+  if (timeSettings.enabled) pauseClocksAfterLoad();
+
+  setup.board = parseFen(setup.snapshot.fen);
+  setup.paletteSelection = null;
+  selected = null;
+  legalTargets = new Set();
+
+  setupPanelEl.removeAttribute("hidden");
+  puzzleToggleEl.setAttribute("aria-pressed", "true");
+  boardEl.classList.add("setup-mode");
+
+  renderSetupBoard();
+  renderSetupPalette();
+  log("Setup-Modus aktiv", "ok");
+}
+
+function exitSetupMode(restoreFlags) {
+  if (!setup.active) return;
+  const snap = setup.snapshot;
+  setup.active = false;
+  setup.paletteSelection = null;
+  setup.dragFrom = null;
+  setupPanelEl.setAttribute("hidden", "");
+  puzzleToggleEl.setAttribute("aria-pressed", "false");
+  boardEl.classList.remove("setup-mode");
+  for (const cell of boardEl.children) {
+    cell.classList.remove("setup-target", "dragging");
+  }
+  if (restoreFlags && snap) {
+    if (fishAutoEl) fishAutoEl.checked = snap.autoPlay;
+    stockfishUi.autoPlay = snap.autoPlay;
+    if (liveAutosaveEl) liveAutosaveEl.checked = snap.autoSave;
+    if (snap.analysisOn && !analysis.enabled) setAnalysisEnabled(true);
+  }
+  setup.snapshot = null;
+}
+
+function renderSetupBoard() {
+  currentBoard = { ...setup.board };
+  selected = null;
+  legalTargets = new Set();
+  lastMoveSquares = null;
+  renderBoard();
+  fenEl.value = buildFenFromSetup();
+  fenDirty = false;
+  updateSetupHint();
+}
+
+function renderSetupPalette() {
+  document.querySelectorAll(".setup-piece").forEach(btn => {
+    btn.classList.toggle("selected", btn.dataset.piece === setup.paletteSelection);
+  });
+}
+
+function buildFenFromSetup() {
+  const turnEl = document.querySelector('input[name="setup-turn"]:checked');
+  const turn = turnEl ? turnEl.value : "w";
+  const rows = [];
+  for (let rank = 8; rank >= 1; rank--) {
+    let row = "";
+    let empty = 0;
+    for (const f of FILES) {
+      const sq = f + rank;
+      const piece = setup.board[sq];
+      if (piece) {
+        if (empty > 0) { row += String(empty); empty = 0; }
+        row += piece;
+      } else {
+        empty++;
+      }
+    }
+    if (empty > 0) row += String(empty);
+    rows.push(row);
+  }
+  return `${rows.join("/")} ${turn} - - 0 1`;
+}
+
+function validateSetup() {
+  let wK = 0, bK = 0, wPawns = 0, bPawns = 0, wTotal = 0, bTotal = 0;
+  let whiteKingSq = null, blackKingSq = null;
+  for (const [sq, p] of Object.entries(setup.board)) {
+    const isWhite = p === p.toUpperCase();
+    if (isWhite) wTotal++; else bTotal++;
+    if (p === "K") { wK++; whiteKingSq = sq; }
+    if (p === "k") { bK++; blackKingSq = sq; }
+    if (p === "P") {
+      wPawns++;
+      if (sq[1] === "1" || sq[1] === "8") return "Bauern dürfen nicht auf Reihe 1 oder 8 stehen";
+    }
+    if (p === "p") {
+      bPawns++;
+      if (sq[1] === "1" || sq[1] === "8") return "Bauern dürfen nicht auf Reihe 1 oder 8 stehen";
+    }
+  }
+  if (wK !== 1) return "Genau ein weißer König nötig";
+  if (bK !== 1) return "Genau ein schwarzer König nötig";
+  if (wPawns > 8) return "Maximal 8 weiße Bauern";
+  if (bPawns > 8) return "Maximal 8 schwarze Bauern";
+  if (wTotal > 16) return "Maximal 16 weiße Figuren";
+  if (bTotal > 16) return "Maximal 16 schwarze Figuren";
+  const wf = FILES.indexOf(whiteKingSq[0]);
+  const wr = parseInt(whiteKingSq[1], 10);
+  const bf = FILES.indexOf(blackKingSq[0]);
+  const br = parseInt(blackKingSq[1], 10);
+  if (Math.abs(wf - bf) <= 1 && Math.abs(wr - br) <= 1) {
+    return "Könige dürfen nicht direkt nebeneinander stehen";
+  }
+  return null;
+}
+
+function updateSetupHint() {
+  const err = validateSetup();
+  if (err) {
+    setupHintEl.textContent = err;
+    setupHintEl.classList.add("err");
+    setupApplyBtn.disabled = true;
+  } else {
+    setupHintEl.textContent = "Stellung gültig — „Übernehmen“ lädt sie ins Spiel.";
+    setupHintEl.classList.remove("err");
+    setupApplyBtn.disabled = false;
+  }
+}
+
+function setupSquareClick(sq) {
+  const sel = setup.paletteSelection;
+  if (!sel) return;
+  if (sel === "x") {
+    const piece = setup.board[sq];
+    if (!piece) return;
+    if (piece === "K" || piece === "k") {
+      log("König kann nicht gelöscht werden — verschiebe ihn per Drag", "err");
+      return;
+    }
+    delete setup.board[sq];
+  } else {
+    if (sel === "K" || sel === "k") {
+      for (const [s, p] of Object.entries(setup.board)) {
+        if (p === sel && s !== sq) delete setup.board[s];
+      }
+    }
+    setup.board[sq] = sel;
+  }
+  renderSetupBoard();
+}
+
+function setupDragStart(e, sq) {
+  if (!setup.board[sq]) { e.preventDefault(); return; }
+  if (setup.paletteSelection) {
+    setup.paletteSelection = null;
+    renderSetupPalette();
+  }
+  setup.dragFrom = sq;
+  try {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", sq);
+  } catch (_) {}
+  const src = e.currentTarget;
+  const cs   = getComputedStyle(src);
+  const size = src.getBoundingClientRect();
+  const ghost = document.createElement("div");
+  ghost.className = "drag-ghost";
+  ghost.textContent = PIECE_GLYPHS[setup.board[sq].toLowerCase()];
+  ghost.style.width      = `${size.width}px`;
+  ghost.style.height     = `${size.height}px`;
+  ghost.style.fontSize   = cs.fontSize;
+  ghost.style.fontFamily = cs.fontFamily;
+  ghost.style.color      = cs.color;
+  ghost.style.textShadow = cs.textShadow;
+  document.body.appendChild(ghost);
+  try { e.dataTransfer.setDragImage(ghost, size.width / 2, size.height / 2); } catch (_) {}
+  setTimeout(() => ghost.remove(), 0);
+  src.classList.add("dragging");
+}
+
+function setupDragOver(e) {
+  if (!setup.dragFrom) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  e.currentTarget.classList.add("setup-target");
+}
+
+function setupDragLeave(e) {
+  e.currentTarget.classList.remove("setup-target");
+}
+
+function setupDrop(e, sq) {
+  e.preventDefault();
+  e.currentTarget.classList.remove("setup-target");
+  const from = setup.dragFrom || e.dataTransfer.getData("text/plain");
+  setup.dragFrom = null;
+  if (!from) { renderSetupBoard(); return; }
+  if (from === sq) { renderSetupBoard(); return; }
+  const piece = setup.board[from];
+  if (!piece) { renderSetupBoard(); return; }
+  delete setup.board[from];
+  setup.board[sq] = piece;
+  renderSetupBoard();
+}
+
+function setupDragEnd() {
+  setup.dragFrom = null;
+  for (const cell of boardEl.children) {
+    cell.classList.remove("setup-target", "dragging");
+  }
+}
+
+async function applySetup() {
+  const err = validateSetup();
+  if (err) { log(`Setup ungültig: ${err}`, "err"); return; }
+  const fen = buildFenFromSetup();
+  try {
+    await api("POST", "/api/fen", { fen });
+    fenDirty = false;
+    resultModalShownFor = null;
+    manualGameOver = false;
+    analysis.prevEvalCp = null;
+    exitSetupMode(true);
+    await refreshState();
+    await refreshPgn();
+    resetClocks();
+    renderClocks();
+    log("Stellung übernommen", "ok");
+    if (analysis.enabled) requestAnalysis(null);
+    syncStockfishUiState({ trigger: "setup-apply" });
+  } catch (e) {
+    log(`Setup fehlgeschlagen: ${e.message}`, "err");
+  }
+}
+
+async function cancelSetup() {
+  exitSetupMode(true);
+  try {
+    await refreshState();
+    await refreshPgn();
+  } catch (e) { log(`Setup-Abbruch: ${e.message}`, "err"); }
+  log("Setup abgebrochen", "ok");
+}
+
+puzzleToggleEl.addEventListener("click", () => {
+  if (setup.active) cancelSetup(); else enterSetupMode();
+});
+
+document.querySelectorAll(".setup-piece").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const piece = btn.dataset.piece;
+    setup.paletteSelection = (setup.paletteSelection === piece) ? null : piece;
+    renderSetupPalette();
+  });
+});
+
+document.querySelectorAll('input[name="setup-turn"]').forEach(el => {
+  el.addEventListener("change", () => {
+    if (!setup.active) return;
+    fenEl.value = buildFenFromSetup();
+    fenDirty = false;
+    updateSetupHint();
+  });
+});
+
+setupEmptyBtn.addEventListener("click", () => {
+  if (!setup.active) return;
+  setup.board = {};
+  renderSetupBoard();
+});
+
+setupStartBtn.addEventListener("click", () => {
+  if (!setup.active) return;
+  setup.board = parseFen(STARTING_FEN);
+  renderSetupBoard();
+});
+
+setupApplyBtn.addEventListener("click", applySetup);
+setupCancelBtn.addEventListener("click", cancelSetup);
 
 // ---------- boot -----------------------------------------------------------
 
