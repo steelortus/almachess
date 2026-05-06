@@ -29,6 +29,29 @@ class RoutesSpec extends AnyWordSpec with Matchers with ScalatestRouteTest:
     def bestMove(fen: String, depth: Int, movetime: Option[Int], skill: Option[Int]): Future[Either[String, String]] =
       Future.successful(Left(err))
 
+  // AiClient whose Future itself fails — exercises the Failure(ex) → 503 branch.
+  private class FailedFutureAiClient(ex: Throwable) extends AiClient:
+    def bestMove(fen: String, depth: Int, movetime: Option[Int], skill: Option[Int]): Future[Either[String, String]] =
+      Future.failed(ex)
+
+  // AiClient that mutates the controller's state during its computation, so that
+  // by the time the route's onComplete runs, controller.toFen != fen → 409 branch.
+  private class StateMutatingAiClient(c: Controller, returns: String) extends AiClient:
+    def bestMove(fen: String, depth: Int, movetime: Option[Int], skill: Option[Int]): Future[Either[String, String]] =
+      c.move("e2", "e4")
+      Future.successful(Right(returns))
+
+  // NotationClient whose Future fails — exercises both notation 503 branches.
+  private class FailedFutureNotationClient(ex: Throwable) extends NotationClient:
+    def validateFen(fen: String): Future[Either[String, String]]                   = Future.failed(ex)
+    def parsePgn(pgn: String): Future[Either[String, (Map[String, String], List[String])]] = Future.failed(ex)
+
+  // NotationClient that approves anything — used to drive Controller-side rejection.
+  private class LenientNotationClient extends NotationClient:
+    def validateFen(fen: String): Future[Either[String, String]]                   = Future.successful(Right(fen))
+    def parsePgn(pgn: String): Future[Either[String, (Map[String, String], List[String])]] =
+      Future.successful(Right((Map.empty, Nil)))
+
   // Local NotationClient that uses parsers directly.
   private def localNotation(ec: ExecutionContext): NotationClient = new NotationClient.Local(ec)
 
@@ -284,6 +307,67 @@ class RoutesSpec extends AnyWordSpec with Matchers with ScalatestRouteTest:
       val routes = buildRoutes(ai = ai)
       val body = HttpEntity(ContentTypes.`application/json`, """{}""")
       Post("/api/game/ai-move", body) ~> routes ~> check {
+        status shouldBe StatusCodes.UnprocessableEntity
+      }
+    }
+
+    "return 503 when the AI client's Future fails" in {
+      val ai     = new FailedFutureAiClient(new RuntimeException("ai down"))
+      val routes = buildRoutes(ai = ai)
+      val body   = HttpEntity(ContentTypes.`application/json`, """{}""")
+      Post("/api/game/ai-move", body) ~> routes ~> check {
+        status shouldBe StatusCodes.ServiceUnavailable
+        responseAs[ErrorResponse].error should include("ai service unavailable")
+      }
+    }
+
+    "return 409 when the controller state changes while the AI computes" in {
+      val controller = new Controller()
+      val ai         = new StateMutatingAiClient(controller, returns = "d2d4")
+      val routes     = buildRoutes(ai = ai, controller = controller)
+      val body       = HttpEntity(ContentTypes.`application/json`, """{}""")
+      Post("/api/game/ai-move", body) ~> routes ~> check {
+        status shouldBe StatusCodes.Conflict
+        responseAs[ErrorResponse].error should include("state changed")
+      }
+    }
+  }
+
+  "POST /api/fen edge cases" should {
+    "return 503 when the notation Future fails" in {
+      val notation = new FailedFutureNotationClient(new RuntimeException("notation down"))
+      val routes   = buildRoutes(notation = notation)
+      Post("/api/fen", FenLoadRequest("any")) ~> routes ~> check {
+        status shouldBe StatusCodes.ServiceUnavailable
+        responseAs[ErrorResponse].error should include("notation service unavailable")
+      }
+    }
+
+    "return 422 when notation says OK but the controller rejects the FEN" in {
+      val notation = new LenientNotationClient
+      val routes   = buildRoutes(notation = notation)
+      Post("/api/fen", FenLoadRequest("not actually a fen")) ~> routes ~> check {
+        status shouldBe StatusCodes.UnprocessableEntity
+      }
+    }
+  }
+
+  "POST /api/pgn edge cases" should {
+    "return 503 when the notation Future fails" in {
+      val notation = new FailedFutureNotationClient(new RuntimeException("notation down"))
+      val routes   = buildRoutes(notation = notation)
+      Post("/api/pgn", PgnImportRequest("1. e4 *")) ~> routes ~> check {
+        status shouldBe StatusCodes.ServiceUnavailable
+        responseAs[ErrorResponse].error should include("notation service unavailable")
+      }
+    }
+
+    "return 422 when notation says OK but the controller rejects the PGN" in {
+      val notation = new LenientNotationClient
+      val routes   = buildRoutes(notation = notation)
+      // Bare "[Event" is unparseable by Controller.importPgn (PgnParser fails),
+      // so even with a lying notation client the controller path returns Left.
+      Post("/api/pgn", PgnImportRequest("[Event")) ~> routes ~> check {
         status shouldBe StatusCodes.UnprocessableEntity
       }
     }

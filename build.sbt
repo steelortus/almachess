@@ -1,5 +1,5 @@
 ThisBuild / version := "0.1.0-SNAPSHOT"
-ThisBuild / scalaVersion := "3.3.1"
+ThisBuild / scalaVersion := "3.3.4"
 
 lazy val akkaVersion     = "2.8.8"
 lazy val akkaHttpVersion = "10.5.3"
@@ -8,6 +8,7 @@ lazy val root = (project in file("."))
   .enablePlugins(JavaAppPackaging)
   .settings(
     name := "AlmaChess",
+    coverageExcludedPackages := "de\\.htwg\\.softwarearchitecture\\.almachess\\.Main\\$?;de\\.htwg\\.softwarearchitecture\\.almachess\\.CliMain\\$?;de\\.htwg\\.softwarearchitecture\\.almachess\\.api\\.Server\\$?;de\\.htwg\\.softwarearchitecture\\.almachess\\.view\\..*",
     Compile / mainClass := Some("de.htwg.softwarearchitecture.almachess.api.Server"),
     libraryDependencies ++= Seq(
       "org.scala-lang.modules" %% "scala-swing" % "3.0.0",
@@ -39,7 +40,7 @@ lazy val bench = (project in file("bench"))
   .dependsOn(root)
   .settings(
     name := "almachess-bench",
-    scalaVersion := "3.3.1",
+    scalaVersion := "3.3.4",
     publish / skip := true,
     Jmh / fork := true
   )

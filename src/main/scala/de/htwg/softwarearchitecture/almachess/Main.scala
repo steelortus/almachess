@@ -3,6 +3,7 @@ package de.htwg.softwarearchitecture.almachess
 import de.htwg.softwarearchitecture.almachess.control.Controller
 import de.htwg.softwarearchitecture.almachess.view.Gui
 import scala.swing.Swing
+// $COVERAGE-OFF$
 
 object Main:
   def main(args: Array[String]): Unit =
@@ -14,3 +15,4 @@ object Main:
       gui.visible = true
       println("GUI should be visible now")
     }
+    // $COVERAGE-ON$

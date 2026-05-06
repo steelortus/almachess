@@ -90,4 +90,33 @@ class CommandParserSpec extends AnyWordSpec with Matchers:
       CommandParser.parse("move")  shouldBe a[Left[_, _]]
       CommandParser.parse("ai on green") shouldBe a[Left[_, _]]
     }
+
+    "reject extra tokens after a complete command" in {
+      CommandParser.parse("undo extra")             shouldBe a[Left[_, _]]
+      CommandParser.parse("ai off bogus")           shouldBe a[Left[_, _]]
+      CommandParser.parse("set ai depth 4 garbage") shouldBe a[Left[_, _]]
+    }
+
+    "reject an unbalanced quoted argument" in {
+      CommandParser.parse("""export pgn "missing-close""") shouldBe a[Left[_, _]]
+    }
+
+    "reject an invalid promotion character" in {
+      CommandParser.parse("move e7 e8 z") shouldBe a[Left[_, _]]
+      CommandParser.parse("move e7 e8 5") shouldBe a[Left[_, _]]
+    }
+
+    "reject a non-numeric ai depth" in {
+      CommandParser.parse("set ai depth deep") shouldBe a[Left[_, _]]
+    }
+
+    "accept an empty quoted path (parser-level)" in {
+      // The parser doesn't validate the path content — only the grammar.
+      CommandParser.parse("""export pgn """"") shouldBe Right(Command.ExportPgn(""))
+    }
+
+    "reject export/import without a path argument" in {
+      CommandParser.parse("export pgn")  shouldBe a[Left[_, _]]
+      CommandParser.parse("import json") shouldBe a[Left[_, _]]
+    }
   }

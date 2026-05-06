@@ -5,6 +5,7 @@
 // Single filled glyph per piece type — the side is expressed via CSS colour
 // (piece-white / piece-black) so both colours stay solid regardless of the
 // square background.
+
 const PIECE_GLYPHS = {
   k: "\u265A", q: "\u265B", r: "\u265C", b: "\u265D", n: "\u265E", p: "\u265F",
 };

@@ -371,3 +371,87 @@ class ControllerSpec extends AnyWordSpec with Matchers:
       c.move("a2", "a3") shouldBe a[Left[_, _]]
     }
   }
+
+  "Controller promotion synonyms" should {
+    "accept 'queen' / 'rook' / 'bishop' / 'knight' (case-insensitive)" in {
+      val cases = List(
+        "queen"  -> PieceType.Queen,
+        "Queen"  -> PieceType.Queen,
+        "ROOK"   -> PieceType.Rook,
+        "bishop" -> PieceType.Bishop,
+        "knight" -> PieceType.Knight
+      )
+      for (input, expected) <- cases do
+        val c = new Controller()
+        c.loadFen("8/4P3/8/8/8/8/8/k3K3 w - - 0 1")
+        c.move("e7", "e8", Some(input)) shouldBe a[Right[_, _]]
+        c.state.board.pieceAt(Pos(7, 4)) shouldBe Some(Piece(Color.White, expected))
+    }
+
+    "accept single letters Q / R / B / N (case-insensitive)" in {
+      val cases = List(
+        "Q" -> PieceType.Queen,
+        "q" -> PieceType.Queen,
+        "r" -> PieceType.Rook,
+        "B" -> PieceType.Bishop,
+        "n" -> PieceType.Knight
+      )
+      for (input, expected) <- cases do
+        val c = new Controller()
+        c.loadFen("8/4P3/8/8/8/8/8/k3K3 w - - 0 1")
+        c.move("e7", "e8", Some(input)) shouldBe a[Right[_, _]]
+        c.state.board.pieceAt(Pos(7, 4)) shouldBe Some(Piece(Color.White, expected))
+    }
+
+    "treat an unknown promotion string as default-to-queen" in {
+      // parsePromotion returns None for an unrecognised string; applyMove then
+      // promotes to Queen by default for a pawn reaching the last rank.
+      val c = new Controller()
+      c.loadFen("8/4P3/8/8/8/8/8/k3K3 w - - 0 1")
+      c.move("e7", "e8", Some("unicorn")) shouldBe a[Right[_, _]]
+      c.state.board.pieceAt(Pos(7, 4)) shouldBe Some(Piece(Color.White, PieceType.Queen))
+    }
+  }
+
+  "Controller PGN result tag" should {
+    "render 1/2-1/2 when the game ended in stalemate" in {
+      val c = new Controller()
+      // White Kf7, Qb6, Black Kh8. Move Qb6-g6 → stalemates Black.
+      c.loadFen("7k/5K2/1Q6/8/8/8/8/8 w - - 0 1")
+      c.move("b6", "g6") shouldBe a[Right[_, _]]
+      c.state.status shouldBe "stalemate"
+      c.exportPgn() should include("1/2-1/2")
+    }
+
+    "render 0-1 when White is checkmated (fool's mate)" in {
+      val c = new Controller()
+      c.move("f2", "f3");  c.move("e7", "e5")
+      c.move("g2", "g4");  c.move("d8", "h4") // Qh4#
+      c.state.status should startWith("checkmate")
+      c.state.turn   shouldBe Color.White
+      c.exportPgn() should include("0-1")
+    }
+
+    "render * for an in-progress game" in {
+      val c = new Controller()
+      c.move("e2", "e4")
+      c.exportPgn() should include("*")
+    }
+  }
+
+  "Controller importJson" should {
+    "fall back to GameState.initial when the start FEN is invalid" in {
+      val json = """{"initialFen":"NOT-A-FEN","moves":["e2e4"],"tags":{"Event":"X"}}"""
+      val c    = new Controller()
+      val r    = c.importJson(json)
+      r shouldBe a[Right[_, _]]
+      // Move was replayed from the standard initial position despite the bogus FEN.
+      c.state.board.pieceAt(Pos(3, 4)) shouldBe Some(Piece(Color.White, PieceType.Pawn))
+      c.moveHistory should have size 1
+    }
+
+    "reject when the moves are illegal from the fallback initial position" in {
+      val json = """{"initialFen":"NOT-A-FEN","moves":["e2e9"],"tags":{}}"""
+      new Controller().importJson(json) shouldBe a[Left[_, _]]
+    }
+  }

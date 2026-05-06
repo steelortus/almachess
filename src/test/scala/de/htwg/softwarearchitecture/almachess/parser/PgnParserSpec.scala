@@ -108,4 +108,28 @@ class PgnParserSpec extends AnyWordSpec with Matchers:
     "reject input that contains stray punctuation outside the grammar" in {
       PgnParser.parse("1. e4 ??? *") shouldBe a[Left[_, _]]
     }
+
+    "let a duplicated tag overwrite the earlier value (Map semantics)" in {
+      val pgn = """[Event "First"][Event "Second"] 1. e4 *"""
+      val (tags, _) = PgnParser.parse(pgn).toOption.get
+      tags("Event") shouldBe "Second"
+    }
+
+    "reject nested variations (parser is single-level)" in {
+      // The variation rule disallows '(' or ')' inside, so a nested '(' breaks it.
+      val pgn = "1. e4 (1. d4 (1. c4 c5)) e5 *"
+      PgnParser.parse(pgn) shouldBe a[Left[_, _]]
+    }
+
+    "reject an unterminated comment" in {
+      PgnParser.parse("1. e4 { unterminated comment") shouldBe a[Left[_, _]]
+    }
+
+    "reject an unterminated variation" in {
+      PgnParser.parse("1. e4 (1. d4 d5") shouldBe a[Left[_, _]]
+    }
+
+    "reject a tag with an unterminated quoted value" in {
+      PgnParser.parse("""[Event "no closing quote 1. e4 *""") shouldBe a[Left[_, _]]
+    }
   }
