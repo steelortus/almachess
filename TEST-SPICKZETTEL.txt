@@ -21,11 +21,16 @@ docker compose ps                  # Status + Healthchecks
 docker compose logs -f almachess-api
 docker compose down                # Stoppen & entfernen
 
-# Erreichbar:
-#   http://localhost:8080   Main-API
-#   http://localhost:8081   NotationService
-#   http://localhost:8082   AiService
+# Erreichbar (Compose-Defaults, weichen von den Code-Defaults ab):
 #   http://localhost:8079   Web-Frontend (nginx proxied /api, /notation, /ai)
+#   http://localhost:8083   Main-API
+#   http://localhost:8084   NotationService
+#   http://localhost:8082   AiService
+#
+# Hinweis: Beim direkten Start via sbt (Abschnitt A) gelten die Code-Defaults
+# 8080 (API), 8081 (Notation), 8082 (AI). Die Beispiele in Abschnitt B–G
+# nutzen diese sbt-Defaults; in Compose entsprechend 8083/8084/8082 ersetzen
+# oder einfach durch das Web-Frontend (8079) proxien lassen.
 
 
 ----------------------------------------------------------------
@@ -232,7 +237,8 @@ AiService (8082):
 - Host per Default 0.0.0.0 -> Docker-tauglich
 - In Docker Compose werden die Env-Vars der Main-API fest verdrahtet auf
   ALMACHESS_AI_URL=http://ai-service:8082 und
-  ALMACHESS_NOTATION_URL=http://notation-service:8081.
+  ALMACHESS_NOTATION_URL=http://notation-service:8084.
+  Compose-Ports auf dem Host: API 8083, Notation 8084, AI 8082, Web 8079.
 - Gleiches Image fuer alle drei Services; die Rolle entscheidet MAIN_CLASS.
 
 
@@ -272,11 +278,11 @@ docker compose logs -f         # Live-Logs aller Services
 docker compose logs -f almachess-api   # nur ein Service
 docker compose top             # Prozesse in den Containern
 docker stats                   # Live CPU/RAM pro Container
-Healthcheck aus der Host-Sicht:
+Healthcheck aus der Host-Sicht (Compose-Ports):
 
 
-curl -fsS http://localhost:18080/health
-curl -fsS http://localhost:8081/health
+curl -fsS http://localhost:8083/health
+curl -fsS http://localhost:8084/health
 curl -fsS http://localhost:8082/health
 Neustarten
 

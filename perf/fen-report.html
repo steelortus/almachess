@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>AlmaChess – FenParser Performance</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      color: #1f2937;
+      line-height: 1.55;
+    }
+    h1 { font-size: 1.9rem; margin-bottom: 0.2rem; }
+    h2 { font-size: 1.35rem; margin-top: 2.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.4rem; }
+    h3 { font-size: 1.05rem; margin-top: 1.6rem; color: #374151; }
+    .subtitle { color: #6b7280; margin-top: 0; }
+    .tldr {
+      background: #d1fae5;
+      border-left: 4px solid #10b981;
+      padding: 0.9rem 1.2rem;
+      margin: 1.5rem 0;
+      border-radius: 4px;
+    }
+    .tldr strong { color: #065f46; }
+    .chart-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1.2rem 1.4rem;
+      margin: 1rem 0 2rem;
+    }
+    .chart-card p {
+      margin: 0 0 0.9rem 0;
+      color: #4b5563;
+      font-size: 0.95rem;
+    }
+    canvas { max-height: 360px; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.92rem;
+      margin: 0.5rem 0 1rem;
+    }
+    th, td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    th { background: #f3f4f6; font-weight: 600; }
+    .delta-good { color: #059669; font-weight: 600; }
+    .delta-bad  { color: #dc2626; font-weight: 600; }
+    code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+    .footnote { font-size: 0.85rem; color: #6b7280; margin-top: 1rem; }
+    .nav { font-size: 0.95rem; color: #4b5563; margin-bottom: 0.5rem; }
+    .nav a { color: #2563eb; text-decoration: none; }
+    .nav a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<p class="nav">
+  Reports: <a href="fen-report.html"><strong>FenParser</strong></a> ·
+  <a href="mongo-report.html">Mongo</a> ·
+  <a href="stress-report.html">Stresstest (k6)</a> ·
+  <a href="artillery-report.html">Stresstest (Artillery)</a>
+</p>
+
+<h1>FenParser – Performance vor / nach Optimierung</h1>
+<p class="subtitle">Drei Mess-Ebenen: JMH (Funktion), k6 (HTTP), Gatling (HTTP, anderer Client).</p>
+
+<div class="tldr">
+  <strong>Kurzfassung:</strong> Die Mittelspiel-FEN wird in JMH <strong>2,0× schneller</strong>
+  geparst (5,5 → 2,7 µs). Im HTTP-Lasttest landet das als <strong>−21 % p95</strong>
+  (k6) bzw. <strong>−31 % p95</strong> (Gatling) und <strong>+14–23 % Throughput</strong> –
+  ein Funktions-Fix, der durch alle Ebenen durchschlägt.
+</div>
+
+<h2>1. JMH – Mikrobenchmark der Funktion</h2>
+
+<div class="chart-card">
+  <p>Drei FEN-Varianten als Eingabe: Startposition, Mittelspiel, leeres Brett.
+     <strong>Niedriger ist besser</strong> (Zeit pro Aufruf in Mikrosekunden).
+     Größter Sprung bei <code>parseMid</code>: dort allokiert der alte Code am
+     meisten Zwischen-<code>Vector</code>s.</p>
+  <canvas id="jmhAvgChart"></canvas>
+</div>
+
+<h2>2. JMH – Durchsatz</h2>
+
+<div class="chart-card">
+  <p>Dieselben Messungen, andere Sicht: Operationen pro Mikrosekunde.
+     <strong>Höher ist besser.</strong> parseMid und parseStart über 2,5×
+     besser, parseEmpty +35 %.</p>
+  <canvas id="jmhThroughputChart"></canvas>
+</div>
+
+<h2>3. k6 – HTTP-Latenz unter Last</h2>
+
+<div class="chart-card">
+  <p>30 simulierte Clients, 30 Sekunden, gegen <code>POST /notation/fen/validate</code>.
+     <strong>Niedriger ist besser.</strong> p95 fällt von 26,7 ms auf 21,1 ms,
+     der Maximum-Ausreißer halbiert sich beinahe.</p>
+  <canvas id="k6LatencyChart"></canvas>
+</div>
+
+<h2>4. k6 – Anfragen-Durchsatz</h2>
+
+<div class="chart-card">
+  <p>Mehr durchgegangene Anfragen pro Sekunde bei identischer Client-Anzahl
+     – das ist die freigeschaufelte CPU-Zeit, die jetzt nicht mehr in
+     Vector-Allokationen versinkt.</p>
+  <canvas id="k6ThroughputChart"></canvas>
+</div>
+
+<h2>5. Gatling – HTTP-Latenz mit zweitem Tool</h2>
+
+<div class="chart-card">
+  <p>Gleiches Szenario, andere Implementierung. Bestätigt die Richtung und
+     zeigt sogar einen <strong>größeren Tail-Effekt</strong> (p99 −37 %) –
+     das ist Gatlings Open-Loop-Modell, das Tail-Latenz besser sichtbar macht.</p>
+  <canvas id="gatlingLatencyChart"></canvas>
+</div>
+
+<h2>6. Gatling – Durchsatz und Anzahl Anfragen</h2>
+
+<div class="chart-card">
+  <p>Mehr Anfragen pro Sekunde – beide Tools sehen ungefähr +14–23 %, je nach
+     HTTP-Client-Modell.</p>
+  <canvas id="gatlingThroughputChart"></canvas>
+</div>
+
+<h2>7. Übersichtstabelle</h2>
+
+<div class="chart-card">
+  <h3>JMH (avg time, niedriger besser)</h3>
+  <table>
+    <thead><tr><th>Benchmark</th><th>Baseline (µs)</th><th>Optimiert (µs)</th><th>Δ</th></tr></thead>
+    <tbody>
+      <tr><td>parseStart</td><td>4,087</td><td>3,325</td><td class="delta-good">−18,6 %</td></tr>
+      <tr><td>parseMid</td><td>5,523</td><td>2,744</td><td class="delta-good">−50,3 %</td></tr>
+      <tr><td>parseEmpty</td><td>2,355</td><td>1,755</td><td class="delta-good">−25,5 %</td></tr>
+    </tbody>
+  </table>
+
+  <h3>k6 (30 VUs, 30 s)</h3>
+  <table>
+    <thead><tr><th>Metrik</th><th>Baseline</th><th>Optimiert</th><th>Δ</th></tr></thead>
+    <tbody>
+      <tr><td>avg</td><td>12,25 ms</td><td>10,72 ms</td><td class="delta-good">−12,5 %</td></tr>
+      <tr><td>p95</td><td>26,71 ms</td><td>21,11 ms</td><td class="delta-good">−21,0 %</td></tr>
+      <tr><td>p99</td><td>42,72 ms</td><td>33,73 ms</td><td class="delta-good">−21,0 %</td></tr>
+      <tr><td>max</td><td>488,76 ms</td><td>220,82 ms</td><td class="delta-good">−54,8 %</td></tr>
+      <tr><td>Throughput</td><td>2 271 req/s</td><td>2 580 req/s</td><td class="delta-good">+13,6 %</td></tr>
+      <tr><td>Total Anfragen</td><td>68 194</td><td>77 494</td><td class="delta-good">+13,6 %</td></tr>
+      <tr><td>Fehler</td><td>0,00 %</td><td>0,00 %</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Gatling (30 User, 30 s)</h3>
+  <table>
+    <thead><tr><th>Metrik</th><th>Baseline</th><th>Optimiert</th><th>Δ</th></tr></thead>
+    <tbody>
+      <tr><td>mean</td><td>54 ms</td><td>44 ms</td><td class="delta-good">−18,5 %</td></tr>
+      <tr><td>p95</td><td>113 ms</td><td>78 ms</td><td class="delta-good">−31,0 %</td></tr>
+      <tr><td>p99</td><td>166 ms</td><td>105 ms</td><td class="delta-good">−36,7 %</td></tr>
+      <tr><td>max</td><td>715 ms</td><td>460 ms</td><td class="delta-good">−35,7 %</td></tr>
+      <tr><td>Throughput</td><td>438 req/s</td><td>540 req/s</td><td class="delta-good">+23,3 %</td></tr>
+      <tr><td>Total Anfragen</td><td>13 585</td><td>16 731</td><td class="delta-good">+23,2 %</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>8. Was wurde geändert?</h2>
+
+<div class="chart-card">
+  <p>Drei kleine Eingriffe in <code>FenParser.parse</code>:</p>
+  <ol>
+    <li><strong>VectorBuilder statt <code>++ Vector.fill(n)(None)</code> /
+        <code>:+ Some(p)</code></strong>: ein einziger Vector pro Reihe statt
+        Dutzender Zwischenkopien.</li>
+    <li><strong>128-Einträge-Lookup-Table</strong> (<code>Array[Option[Piece]]</code>):
+        Piece-Chars werden über ASCII-Index nachgeschlagen, das gecachte
+        <code>Some(Piece)</code> wird wiederverwendet – keine Allokation pro
+        Char.</li>
+    <li><strong>Fail-Fast</strong> mit while-Loop und Error-Variable statt
+        dreifachem Durchlauf (<code>map → exists → collect</code>).</li>
+  </ol>
+  <p>Tests (6 Specs) bleiben grün – verhaltensgleich, nur schneller.</p>
+</div>
+
+<p class="footnote">
+  Rohdaten: <code>perf/results/jmh-baseline.txt</code>,
+  <code>perf/results/jmh-optimized.txt</code>,
+  <code>perf/results/k6-baseline.txt</code>, <code>k6-optimized.txt</code>,
+  <code>gatling-baseline.txt</code>, <code>gatling-optimized.txt</code>.<br>
+  Vollständiger Bericht: <code>perf/README.md</code>.
+</p>
+
+<script>
+// ---- Daten -----------------------------------------------------------------
+
+// JMH avg time (µs/op, lower=better)
+const jmhLabels       = ['parseStart', 'parseMid', 'parseEmpty'];
+const jmhAvgBaseline  = [4.087, 5.523, 2.355];
+const jmhAvgOptimized = [3.325, 2.744, 1.755];
+
+// JMH throughput (ops/µs, higher=better)
+const jmhThruBaseline  = [0.171, 0.191, 0.435];
+const jmhThruOptimized = [0.437, 0.483, 0.586];
+
+// k6 latency (ms)
+const k6LatLabels    = ['avg', 'p95', 'p99', 'max'];
+const k6LatBaseline  = [12.25, 26.71, 42.72, 488.76];
+const k6LatOptimized = [10.72, 21.11, 33.73, 220.82];
+
+// k6 throughput
+const k6ThruLabels    = ['Throughput (req/s)', 'Total Anfragen'];
+const k6ThruBaseline  = [2271, 68194];
+const k6ThruOptimized = [2580, 77494];
+
+// Gatling latency (ms)
+const gatlingLatLabels    = ['mean', 'p95', 'p99', 'max'];
+const gatlingLatBaseline  = [54, 113, 166, 715];
+const gatlingLatOptimized = [44,  78, 105, 460];
+
+// Gatling throughput
+const gatlingThruLabels    = ['Throughput (req/s)', 'Total Anfragen'];
+const gatlingThruBaseline  = [438, 13585];
+const gatlingThruOptimized = [540, 16731];
+
+// ---- Helpers ---------------------------------------------------------------
+
+const COLOR_BASELINE  = '#94a3b8';   // grau
+const COLOR_OPTIMIZED = '#10b981';   // grün
+
+function compareBarChart(canvasId, labels, baseline, optimized, title, yLabel, log) {
+  const opts = {
+    responsive: true,
+    plugins: {
+      title: { display: true, text: title }
+    },
+    scales: { y: { beginAtZero: !log, title: { display: true, text: yLabel } } }
+  };
+  if (log) {
+    opts.scales.y = { type: 'logarithmic', title: { display: true, text: yLabel + ' (log)' } };
+  }
+  new Chart(document.getElementById(canvasId), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Baseline',  data: baseline,  backgroundColor: COLOR_BASELINE  },
+        { label: 'Optimiert', data: optimized, backgroundColor: COLOR_OPTIMIZED }
+      ]
+    },
+    options: opts
+  });
+}
+
+// ---- Charts ----------------------------------------------------------------
+
+compareBarChart('jmhAvgChart',       jmhLabels,    jmhAvgBaseline,  jmhAvgOptimized,
+                'JMH Average Time pro Aufruf (µs/op, niedriger besser)', 'µs/op', false);
+
+compareBarChart('jmhThroughputChart', jmhLabels,    jmhThruBaseline, jmhThruOptimized,
+                'JMH Throughput (Operationen pro µs, höher besser)', 'ops/µs', false);
+
+compareBarChart('k6LatencyChart',    k6LatLabels,  k6LatBaseline,   k6LatOptimized,
+                'k6 HTTP-Latenz (ms, log-Skala wegen max-Spitze)', 'ms', true);
+
+compareBarChart('k6ThroughputChart', k6ThruLabels, k6ThruBaseline,  k6ThruOptimized,
+                'k6 Durchsatz (höher besser, log-Skala)', 'Anzahl', true);
+
+compareBarChart('gatlingLatencyChart', gatlingLatLabels, gatlingLatBaseline, gatlingLatOptimized,
+                'Gatling Latenz (ms, niedriger besser)', 'ms', false);
+
+compareBarChart('gatlingThroughputChart', gatlingThruLabels, gatlingThruBaseline, gatlingThruOptimized,
+                'Gatling Durchsatz (höher besser, log-Skala)', 'Anzahl', true);
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>AlmaChess — Test Frontend</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="styles.css?v=20260503-13" />
+  <link rel="stylesheet" href="styles.css?v=20260512-18" />
 </head>
 <body>
   <header>
@@ -30,7 +30,86 @@
       <button id="btn-sound-menu" class="icon-btn" title="Sounds" aria-haspopup="true" aria-expanded="false">🔊</button>
       <button id="btn-analysis-toggle" class="icon-btn analysis-off" title="Analyse ein/aus" aria-pressed="false">🔍</button>
       <button id="btn-puzzle-menu" class="icon-btn" title="Stellung aufbauen" aria-pressed="false">🧩</button>
+      <button id="btn-lichess-menu" class="icon-btn" title="Lichess-Bot" aria-haspopup="true" aria-expanded="false">🤖</button>
       <button id="btn-db-menu" class="icon-btn" title="Datenbank-Menü" aria-haspopup="true" aria-expanded="false">⚙</button>
+    </div>
+
+    <div id="lichess-menu" class="db-menu lichess-menu" hidden>
+      <div class="db-menu-header">
+        <strong>Lichess-Bot</strong>
+        <span class="db-menu-backend">Status: <span id="lichess-status-label">—</span></span>
+      </div>
+
+      <div id="lichess-tokens" class="lichess-tokens">
+        <span class="lichess-token-row">
+          <span class="lichess-token-name">Board-Token (Mensch)</span>
+          <span id="lichess-board-state" class="lichess-token-state">—</span>
+        </span>
+        <span class="lichess-token-row">
+          <span class="lichess-token-name">Bot-Token (Stockfish)</span>
+          <span id="lichess-bot-state" class="lichess-token-state">—</span>
+        </span>
+      </div>
+
+      <label class="db-menu-row">Lichess-Bot-Username
+        <input id="lichess-bot-username" type="text" placeholder="z.B. maia1" />
+      </label>
+
+      <div class="db-menu-row">
+        <span>Modus</span>
+        <div class="fish-mode-row">
+          <label><input type="radio" name="lichess-mode" value="board" checked /> Ich spiele</label>
+          <label><input type="radio" name="lichess-mode" value="bot" /> Stockfish spielt</label>
+        </div>
+      </div>
+
+      <div class="db-menu-row">
+        <span>Farbe</span>
+        <div class="fish-mode-row">
+          <label><input type="radio" name="lichess-color" value="white" /> Weiß</label>
+          <label><input type="radio" name="lichess-color" value="black" /> Schwarz</label>
+          <label><input type="radio" name="lichess-color" value="random" checked /> Zufall</label>
+        </div>
+      </div>
+
+      <label class="db-menu-row">Zeitmodus
+        <select id="lichess-time-control">
+          <optgroup label="Live (mit Uhr)">
+            <option value="3+2" selected>Blitz 3+2</option>
+            <option value="5+0">Blitz 5+0</option>
+            <option value="10+0">Rapid 10+0</option>
+            <option value="15+10">Rapid 15+10</option>
+            <option value="30+0">Classical 30+0</option>
+            <option value="60+0">Classical 60+0</option>
+          </optgroup>
+          <optgroup label="Ohne Uhr (Korrespondenz)">
+            <option value="1d">1 Tag pro Zug</option>
+            <option value="3d">3 Tage pro Zug</option>
+            <option value="14d">14 Tage pro Zug</option>
+          </optgroup>
+        </select>
+      </label>
+      <div class="lichess-time-active">
+        Aktiv: <span id="lichess-time-active-label">Blitz 3+2</span>
+        <span class="lichess-time-hint" id="lichess-time-hint" hidden>
+          Hinweis: Maia-Bots lehnen Korrespondenz häufig ab.
+        </span>
+      </div>
+
+      <label class="db-autosave-toggle">
+        <input id="chk-lichess-rated" type="checkbox" /> Rated
+      </label>
+
+      <div class="db-menu-buttons">
+        <button id="btn-lichess-challenge" type="button" class="primary">Bot herausfordern</button>
+        <button id="btn-lichess-resign" type="button" class="danger" disabled>Aufgeben</button>
+        <button id="btn-lichess-disconnect" type="button" disabled>Trennen</button>
+      </div>
+
+      <div class="fish-advanced-hint">
+        Engine-Hilfe ist nur über die Lichess-Bot-API erlaubt. Mensch-gegen-Bot-Spiele
+        laufen ohne Stockfish-Unterstützung.
+      </div>
     </div>
 
     <div id="theme-menu" class="db-menu theme-menu" hidden>
@@ -327,6 +406,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260503-13"></script>
+  <script src="app.js?v=20260512-18"></script>
 </body>
 </html>

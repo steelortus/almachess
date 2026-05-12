@@ -4,7 +4,7 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.*
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives.*
 import akka.http.scaladsl.server.Route
-import de.htwg.softwarearchitecture.almachess.clients.{AiClient, NotationClient}
+import de.htwg.softwarearchitecture.almachess.clients.{AiClient, LichessClient, NotationClient}
 import de.htwg.softwarearchitecture.almachess.control.Controller
 import de.htwg.softwarearchitecture.almachess.model.{Color, PieceType}
 import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, LiveGameStore}
@@ -19,7 +19,8 @@ final class Routes(
     aiClient: AiClient,
     notationClient: NotationClient,
     repository: Option[GameRepository] = None,
-    liveStore: Option[LiveGameStore] = None
+    liveStore: Option[LiveGameStore] = None,
+    lichessClient: Option[LichessClient] = None
 )(using ec: ExecutionContext):
 
   // All mutating access to the Controller is serialized through this lock
@@ -28,6 +29,7 @@ final class Routes(
 
   private val persistenceRoutes = new PersistenceRoutes(controller, repository, lock)
   private val liveRoutes        = new LiveGameRoutes(controller, liveStore, lock)
+  private val lichessRoutes     = new LichessRoutes(lichessClient, aiClient)
 
   private def moveToUci(m: de.htwg.softwarearchitecture.almachess.model.Move): String =
     val promo = m.promotion.map {
@@ -221,4 +223,4 @@ final class Routes(
       )
     }
 
-  val all: Route = concat(healthRoutes, gameRoutes, fenRoutes, pgnRoutes, persistenceRoutes.all, liveRoutes.all)
+  val all: Route = concat(healthRoutes, gameRoutes, fenRoutes, pgnRoutes, persistenceRoutes.all, liveRoutes.all, lichessRoutes.all)

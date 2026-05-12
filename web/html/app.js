@@ -255,6 +255,11 @@ function stripPgnHeaders(pgn) {
 
 // ---------- interactions ---------------------------------------------------
 
+function legalMovesApiUrl(sq) {
+  const prefix = isLichessSessionActive() ? "/api/lichess" : "/api/game";
+  return `${prefix}/legal-moves?from=${sq}`;
+}
+
 async function onSquareClick(sq) {
   if (setup.active) { setupSquareClick(sq); return; }
   if (selected && legalTargets.has(sq)) {
@@ -265,7 +270,7 @@ async function onSquareClick(sq) {
   }
   if (!currentBoard[sq]) { clearSelection(); return; }
   try {
-    const res = await api("GET", `/api/game/legal-moves?from=${sq}`);
+    const res = await api("GET", legalMovesApiUrl(sq));
     const targets = (res.moves || []).map(uci => uci.slice(2, 4));
     if (targets.length === 0) { clearSelection(); return; }
     selected = sq;
@@ -321,7 +326,7 @@ async function onDragStart(e, sq) {
   // Fetch legal targets asynchronously — the drag is already in flight,
   // highlights appear a moment later which is fine.
   try {
-    const res = await api("GET", `/api/game/legal-moves?from=${sq}`);
+    const res = await api("GET", legalMovesApiUrl(sq));
     const targets = (res.moves || []).map(uci => uci.slice(2, 4));
     legalTargets = new Set(targets);
     renderBoard();
@@ -335,10 +340,15 @@ async function onDragStart(e, sq) {
 
 function onDragOver(e, sq) {
   if (setup.active) { setupDragOver(e); return; }
-  if (!dragFrom || !legalTargets.has(sq)) return;
+  if (!dragFrom) return;
+  // Always accept the drag while a piece is airborne. `dragover` only fires
+  // on mouse movement, so if we gated on `legalTargets.has(sq)` here the user
+  // couldn't drop when they picked up a piece, held it still over a target,
+  // and waited for the legal-moves API to resolve. The drop handler does the
+  // real legality check.
   e.preventDefault();
   e.dataTransfer.dropEffect = "move";
-  e.currentTarget.classList.add("drop-target");
+  if (legalTargets.has(sq)) e.currentTarget.classList.add("drop-target");
 }
 
 function onDragLeave(e, _sq) {
@@ -376,6 +386,10 @@ async function sendMove(from, to, promotion) {
   const mover = currentTurn;
   const wasCapture = !!currentBoard[to]; // approximate: misses en-passant
   const body = promotion ? { from, to, promotion } : { from, to };
+  if (isLichessSessionActive()) {
+    await sendLichessMove(from, to, promotion, { mover, wasCapture });
+    return;
+  }
   try {
     const state = await api("POST", "/api/game/move", body);
     fenDirty = false;
@@ -383,6 +397,8 @@ async function sendMove(from, to, promotion) {
     onClockMovePlayed(mover);
     await refreshPgn();
     log(`Zug ${from}${to}${promotion ? "=" + promotion.toUpperCase() : ""}`, "ok");
+    const note = describeLocalStatus(state);
+    if (note) log(note, "ok");
     playMoveSound(state, { capture: wasCapture, promotion: !!promotion });
     requestAnalysis(mover);
     maybeAutosave();
@@ -390,6 +406,46 @@ async function sendMove(from, to, promotion) {
   } catch (e) {
     log(`Zug abgelehnt: ${e.message}`, "err");
     clearSelection();
+  }
+}
+
+// Local game status → German message. The Controller emits:
+//   "checkmate - white wins" / "stalemate" / "white is in check" / "white to move"
+// We only return something for noteworthy states; "X to move" is silent.
+function describeLocalStatus(state) {
+  if (!state) return "";
+  const status = String(state.status || "").toLowerCase();
+  if (status.startsWith("checkmate")) {
+    const winner = status.includes("white wins") ? "Weiß" : "Schwarz";
+    return `Schachmatt — ${winner} gewinnt!`;
+  }
+  if (status === "stalemate") return "Patt!";
+  if (status.includes("is in check")) {
+    const side = status.startsWith("white") ? "Weiß" : "Schwarz";
+    return `Schach! ${side} muss reagieren.`;
+  }
+  return "";
+}
+
+// Lichess session status → German message. The stream reports terminal
+// states like "mate" / "draw" / "outoftime" / "resign". For non-terminal
+// turns we synthesise a check warning from session.inCheck.
+function describeLichessStatus(session) {
+  if (!session) return "";
+  if (session.inCheck && !session.gameOver) {
+    const side = session.inCheck === "white" ? "Weiß" : "Schwarz";
+    return `Schach! ${side} muss reagieren.`;
+  }
+  const status = String(session.status || "").toLowerCase();
+  const winner = session.winner ? (session.winner === "white" ? "Weiß" : "Schwarz") : null;
+  switch (status) {
+    case "mate":      return winner ? `Schachmatt — ${winner} gewinnt!` : "Schachmatt!";
+    case "stalemate": return "Patt!";
+    case "draw":      return "Remis";
+    case "outoftime": return winner ? `Zeit abgelaufen — ${winner} gewinnt!` : "Zeit abgelaufen";
+    case "resign":    return winner ? `Aufgegeben — ${winner} gewinnt!` : "Aufgegeben";
+    case "abort":     return "Spiel abgebrochen";
+    default:          return "";
   }
 }
 
@@ -459,6 +515,10 @@ document.getElementById("btn-redo").addEventListener("click", async () => {
 });
 
 document.getElementById("btn-ai").addEventListener("click", async () => {
+  if (isLichessSessionActive()) {
+    log("AI-Zug ist im Lichess-Mensch-Modus deaktiviert", "err");
+    return;
+  }
   const fallbackDepth = parseInt(document.getElementById("ai-depth").value, 10) || 2;
   const ok = await runAiMove(fallbackDepth);
   // After the manual AI-move click, the auto-AI loop must keep going so
@@ -1406,6 +1466,9 @@ function resetClocks() {
 }
 
 function tickClocks() {
+  // Lichess sessions own the clock authoritatively; we just recompute the
+  // displayed value from the latest snapshot + elapsed wall-clock time.
+  if (isLichessSessionActive() && renderLichessClocks()) return;
   if (!timeSettings.enabled || !clocks.runningSide || clocks.expired) {
     renderClocks();
     return;
@@ -2260,6 +2323,445 @@ setupStartBtn.addEventListener("click", () => {
 setupApplyBtn.addEventListener("click", applySetup);
 setupCancelBtn.addEventListener("click", cancelSetup);
 
+// ---------- lichess bot menu ----------------------------------------------
+
+const lichessMenuEl     = document.getElementById("lichess-menu");
+const lichessMenuToggle = document.getElementById("btn-lichess-menu");
+const lichessStatusLbl  = document.getElementById("lichess-status-label");
+const lichessBoardState = document.getElementById("lichess-board-state");
+const lichessBotState   = document.getElementById("lichess-bot-state");
+const lichessChallengeBtn  = document.getElementById("btn-lichess-challenge");
+const lichessResignBtn     = document.getElementById("btn-lichess-resign");
+const lichessDisconnectBtn = document.getElementById("btn-lichess-disconnect");
+const lichessModeRadios    = document.querySelectorAll('input[name="lichess-mode"]');
+const lichessUsernameEl    = document.getElementById("lichess-bot-username");
+const lichessTimeEl        = document.getElementById("lichess-time-control");
+const lichessTimeActiveEl  = document.getElementById("lichess-time-active-label");
+const lichessTimeHintEl    = document.getElementById("lichess-time-hint");
+const lichessRatedEl       = document.getElementById("chk-lichess-rated");
+
+// Mirrors the dropdown selection into a label below it and warns when the
+// user picks a correspondence mode (most Lichess bots — Maia included —
+// refuse correspondence challenges with `declineReason: "timecontrol"`).
+function syncLichessTimeLabel() {
+  if (!lichessTimeEl) return;
+  const opt = lichessTimeEl.options[lichessTimeEl.selectedIndex];
+  const isCorrespondence = /d$/.test(lichessTimeEl.value);
+  if (lichessTimeActiveEl) lichessTimeActiveEl.textContent = opt?.textContent?.trim() || lichessTimeEl.value;
+  if (lichessTimeHintEl) {
+    if (isCorrespondence) lichessTimeHintEl.removeAttribute("hidden");
+    else lichessTimeHintEl.setAttribute("hidden", "");
+  }
+}
+if (lichessTimeEl) {
+  lichessTimeEl.addEventListener("change", syncLichessTimeLabel);
+  syncLichessTimeLabel();
+}
+
+const lichessState = {
+  session: null,
+  pollTimer: null,
+  autoBusy: false,
+  lastLoggedSignature: null, // dedupe poll-driven status logs
+};
+
+// Emit a check/mate/draw note when the underlying status changes since the
+// last poll, so the user sees "Schach!" after maia1's reply without spamming
+// the same line on every 1.5s tick.
+function maybeLogSessionTransition(session) {
+  if (!session) { lichessState.lastLoggedSignature = null; return; }
+  const sig = [
+    session.gameOver ? "over" : "live",
+    session.status || "",
+    session.inCheck || "-",
+    session.winner || "-",
+    (session.moves || []).length
+  ].join("|");
+  if (sig === lichessState.lastLoggedSignature) return;
+  lichessState.lastLoggedSignature = sig;
+  const note = describeLichessStatus(session);
+  if (note) log(note, "ok");
+}
+
+function isLichessSessionActive() {
+  return !!(lichessState.session && lichessState.session.gameId && !lichessState.session.gameOver);
+}
+
+// True when the Lichess stream is alive and reflecting the current game.
+// Used to gate move actions — sending a move before the stream confirms the
+// game exists is what abandoned our first smoke-test challenges.
+function isLichessStreamReady(session) {
+  return !!session && session.streamStatus === "streaming";
+}
+
+// Stockfish-vs-Bot mode requires the bot token and an active bot session
+// where it's our turn. Auto-move triggers automatically from poll updates.
+function shouldAutoMoveOnLichess(session) {
+  if (!session || !session.gameId) return false;
+  if (session.mode !== "bot") return false;
+  if (session.gameOver) return false;
+  if (!session.yourTurn) return false;
+  if (!isLichessStreamReady(session)) return false;
+  return true;
+}
+
+function setTokenBadge(el, ok) {
+  if (!el) return;
+  el.classList.remove("up", "down");
+  el.classList.add(ok ? "up" : "down");
+  el.textContent = ok ? "vorhanden" : "fehlt";
+}
+
+function updateLichessModeAvailability(status) {
+  // "Stockfish spielt" requires bot token. Disable the radio if not present
+  // and fall back to board mode.
+  const botRadio = document.querySelector('input[name="lichess-mode"][value="bot"]');
+  if (botRadio) {
+    const allowed = !!status?.botToken;
+    botRadio.disabled = !allowed;
+    if (!allowed && botRadio.checked) {
+      const boardRadio = document.querySelector('input[name="lichess-mode"][value="board"]');
+      if (boardRadio) boardRadio.checked = true;
+    }
+  }
+}
+
+function applyLichessSession(session) {
+  if (!session || !session.fen) return;
+  lichessState.session = session;
+  if (fishAutoEl) {
+    fishAutoEl.checked = false;
+    stockfishUi.autoPlay = false;
+  }
+  fenDirty = false;
+  currentBoard = parseFen(session.fen);
+  if (!fenDirty) fenEl.value = session.fen;
+  currentTurn = session.turn || (session.fen.split(" ")[1] === "b" ? "black" : "white");
+  currentGameOver = !!session.gameOver;
+  // Don't clobber drag state mid-drag. The 1.5s polling cycle would otherwise
+  // empty `legalTargets` while a piece is still airborne; the user's drop
+  // would then silently fail on `legalTargets.has(sq) === false`.
+  if (!dragFrom) {
+    selected = null;
+    legalTargets = new Set();
+  }
+  lastMoveSquares = parseLastMove(session.lastMove);
+  setBoardFlipped(session.yourColor === "black");
+  statusEl.textContent = `Lichess: ${session.status || "aktiv"}`;
+  applyLichessClocks(session);
+  renderBoard();
+}
+
+// Snapshot of the latest authoritative Lichess clock values plus the wall-
+// clock time at which they were captured. tickClocks renders by computing
+// `snapshotValue - (now - snapshotAt)` for the running side. The displayed
+// value (`displayWhiteMs` / `displayBlackMs`) is anti-jump: it never rises
+// from one render to the next. That hides the +increment spike that
+// otherwise arrives with poll latency after every move, and avoids the ±1s
+// jitter caused by drift between local tick and Lichess's authoritative
+// values. The cost: the displayed value can lag truth by the cumulative
+// unspent-increment time. We treat that as the lesser evil.
+const lichessClock = {
+  gameId: null,
+  whiteMs: null,
+  blackMs: null,
+  runningSide: null,
+  snapshotAt: null,
+  displayWhiteMs: null,
+  displayBlackMs: null,
+};
+
+function applyLichessClocks(session) {
+  const hasClocks =
+    typeof session.whiteMs === "number" && typeof session.blackMs === "number";
+  // Reset the anti-jump baseline whenever we enter a new Lichess game,
+  // otherwise the displayed values from the previous game would clamp the
+  // initial values of the new one.
+  if (lichessClock.gameId !== session.gameId) {
+    lichessClock.gameId = session.gameId;
+    lichessClock.displayWhiteMs = null;
+    lichessClock.displayBlackMs = null;
+  }
+  if (!hasClocks) {
+    timeSettings.enabled = false;
+    lichessClock.whiteMs = null;
+    lichessClock.blackMs = null;
+    lichessClock.runningSide = null;
+    clocks.runningSide = null;
+    clocks.lastTickAt = null;
+    renderClocks();
+    return;
+  }
+  timeSettings.enabled          = true;
+  timeSettings.baseSeconds      = Math.round((session.clockInitialMs || 0) / 1000);
+  timeSettings.incrementSeconds = Math.round((session.clockIncrementMs || 0) / 1000);
+  timeSettings.modeName         = `Lichess ${Math.round(timeSettings.baseSeconds / 60)}+${timeSettings.incrementSeconds}`;
+  const moveCount = (session.moves || []).length;
+  lichessClock.whiteMs    = session.whiteMs;
+  lichessClock.blackMs    = session.blackMs;
+  lichessClock.snapshotAt = performance.now();
+  // Lichess starts the clock only after move 1. Setting runningSide before
+  // then would let the local tick visibly count down while the poll keeps
+  // snapping back to the initial value.
+  lichessClock.runningSide =
+    (session.gameOver || moveCount === 0 || !session.turn) ? null : session.turn;
+  clocks.firstMovePlayed = moveCount > 0;
+  clocks.expired = false;
+  clocks.expiredSide = null;
+  renderLichessClocks();
+}
+
+// Compute effective remaining time from the snapshot + elapsed wall-clock
+// time, then apply anti-jump-up (the display can only decrease). Pushed into
+// `clocks.whiteMs/blackMs` so the existing paintClock renderer stays
+// unchanged.
+function renderLichessClocks() {
+  if (lichessClock.whiteMs == null || lichessClock.blackMs == null) return false;
+  let whiteTruth = lichessClock.whiteMs;
+  let blackTruth = lichessClock.blackMs;
+  if (lichessClock.runningSide && lichessClock.snapshotAt != null) {
+    const elapsed = performance.now() - lichessClock.snapshotAt;
+    if (lichessClock.runningSide === "white") whiteTruth = Math.max(0, whiteTruth - elapsed);
+    else                                       blackTruth = Math.max(0, blackTruth - elapsed);
+  }
+  // Anti-jump: displayed value never goes up.
+  if (lichessClock.displayWhiteMs == null || whiteTruth < lichessClock.displayWhiteMs) {
+    lichessClock.displayWhiteMs = whiteTruth;
+  }
+  if (lichessClock.displayBlackMs == null || blackTruth < lichessClock.displayBlackMs) {
+    lichessClock.displayBlackMs = blackTruth;
+  }
+  clocks.whiteMs = lichessClock.displayWhiteMs;
+  clocks.blackMs = lichessClock.displayBlackMs;
+  clocks.runningSide = lichessClock.runningSide;
+  renderClocks();
+  return true;
+}
+
+function handleLichessStatus(status, { paintBoard = false } = {}) {
+  setTokenBadge(lichessBoardState, !!status.boardToken);
+  setTokenBadge(lichessBotState,   !!status.botToken);
+  lichessState.session = status.session || null;
+
+  if (!status.boardToken && !status.botToken) {
+    lichessStatusLbl.textContent = "kein Token konfiguriert";
+  } else if (status.session?.gameId) {
+    const sess = status.session;
+    const turn = sess.yourTurn ? "du bist dran" : "wartet";
+    const stream = sess.streamStatus && sess.streamStatus !== "streaming"
+      ? ` · ${sess.streamStatus}`
+      : "";
+    lichessStatusLbl.textContent = `aktiv (${sess.gameId}, ${turn})${stream}`;
+  } else {
+    lichessStatusLbl.textContent = "bereit";
+  }
+
+  const hasSession = !!status.session?.gameId;
+  lichessResignBtn.disabled     = !hasSession || !!status.session?.gameOver;
+  lichessDisconnectBtn.disabled = !hasSession;
+  lichessChallengeBtn.disabled  = hasSession || (!status.boardToken && !status.botToken);
+  updateLichessModeAvailability(status);
+
+  if (paintBoard && status.session) applyLichessSession(status.session);
+  if (hasSession && !status.session?.gameOver) startLichessPolling();
+  if (!hasSession) stopLichessPolling();
+
+  maybeLogSessionTransition(status.session);
+  if (shouldAutoMoveOnLichess(status.session)) requestLichessAutoMove();
+}
+
+async function refreshLichessStatus() {
+  try {
+    const status = await api("GET", "/api/lichess/status");
+    handleLichessStatus(status);
+  } catch (e) {
+    setTokenBadge(lichessBoardState, false);
+    setTokenBadge(lichessBotState,   false);
+    lichessStatusLbl.textContent = "Backend offline";
+    lichessChallengeBtn.disabled  = true;
+    lichessResignBtn.disabled     = true;
+    lichessDisconnectBtn.disabled = true;
+    stopLichessPolling();
+  }
+}
+
+function toggleLichessMenu(force) {
+  const open = force !== undefined ? force : lichessMenuEl.hasAttribute("hidden");
+  if (open) {
+    lichessMenuEl.removeAttribute("hidden");
+    lichessMenuToggle.setAttribute("aria-expanded", "true");
+    refreshLichessStatus();
+  } else {
+    lichessMenuEl.setAttribute("hidden", "");
+    lichessMenuToggle.setAttribute("aria-expanded", "false");
+  }
+}
+
+if (lichessMenuToggle) {
+  lichessMenuToggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleLichessMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (lichessMenuEl.hasAttribute("hidden")) return;
+    if (lichessMenuEl.contains(e.target) || lichessMenuToggle.contains(e.target)) return;
+    toggleLichessMenu(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !lichessMenuEl.hasAttribute("hidden")) toggleLichessMenu(false);
+  });
+}
+
+function startLichessPolling() {
+  if (lichessState.pollTimer) return;
+  // 500 ms keeps the clock display within half a second of Lichess truth,
+  // which makes Fischer-increment jumps appear close to the move that
+  // caused them. Each poll is a cheap /session read against an in-memory
+  // session — no upstream call.
+  lichessState.pollTimer = setInterval(pollLichessSession, 500);
+}
+
+function stopLichessPolling() {
+  if (!lichessState.pollTimer) return;
+  clearInterval(lichessState.pollTimer);
+  lichessState.pollTimer = null;
+}
+
+async function pollLichessSession() {
+  try {
+    const status = await api("GET", "/api/lichess/session");
+    handleLichessStatus(status, { paintBoard: true });
+  } catch (e) {
+    log(`Lichess-Session: ${e.message}`, "err");
+    stopLichessPolling();
+  }
+}
+
+function selectedRadioValue(name, fallback) {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el ? el.value : fallback;
+}
+
+function readLichessChallengeSettings() {
+  return {
+    username: (lichessUsernameEl?.value || "").trim(),
+    mode: selectedRadioValue("lichess-mode", "board"),
+    color: selectedRadioValue("lichess-color", "random"),
+    timeControl: lichessTimeEl?.value || "3+2",
+    rated: !!lichessRatedEl?.checked,
+  };
+}
+
+async function createLichessChallenge() {
+  const payload = readLichessChallengeSettings();
+  if (!payload.username) {
+    log("Bitte Lichess-Bot-Username eingeben", "err");
+    return;
+  }
+  // Lichess usernames are alphanumeric + "-_" only. Reject whitespace early
+  // so we don't get an opaque 404 from Lichess later.
+  if (!/^[A-Za-z0-9_-]+$/.test(payload.username)) {
+    log(`Ungültiger Lichess-Username: "${payload.username}" (nur Buchstaben/Zahlen/-/_ erlaubt)`, "err");
+    return;
+  }
+  try {
+    lichessChallengeBtn.disabled = true;
+    const status = await api("POST", "/api/lichess/challenge", payload);
+    handleLichessStatus(status, { paintBoard: true });
+    const modeLabel = payload.mode === "bot" ? "Stockfish-vs-Bot" : "Mensch";
+    log(`Lichess-Challenge an ${payload.username} gesendet (${modeLabel})`, "ok");
+  } catch (e) {
+    log(`Lichess-Challenge: ${e.message}`, "err");
+  } finally {
+    refreshLichessStatus();
+  }
+}
+
+// Ask the backend to compute a Stockfish move and send it to Lichess via the
+// Bot API. Only valid when session.mode === "bot" (Fair Play). Guarded by
+// `autoBusy` so concurrent triggers don't pile up engine requests.
+async function requestLichessAutoMove() {
+  if (lichessState.autoBusy) return;
+  const sess = lichessState.session;
+  if (!shouldAutoMoveOnLichess(sess)) return;
+  lichessState.autoBusy = true;
+  try {
+    const cfg = effectiveFishConfig();
+    const payload = {};
+    if (cfg.depth    != null) payload.depth    = cfg.depth;
+    if (cfg.movetime != null) payload.movetime = cfg.movetime;
+    if (cfg.skill    != null) payload.skill    = cfg.skill;
+    const res = await api("POST", "/api/lichess/auto-move", payload);
+    handleLichessStatus(res.status, { paintBoard: true });
+    log(`Lichess-Bot-Zug: ${res.move}`, "ok");
+  } catch (e) {
+    log(`Auto-Move: ${e.message}`, "err");
+  } finally {
+    lichessState.autoBusy = false;
+  }
+}
+
+async function sendLichessMove(from, to, promotion, { wasCapture = false } = {}) {
+  // Gate manual moves the same way auto-move is gated. Without an open NDJSON
+  // stream the game either doesn't exist yet (challenge not accepted) or was
+  // declined — sending the move would just earn a 404 from Lichess.
+  if (!isLichessStreamReady(lichessState.session)) {
+    const why = lichessState.session?.streamStatus || "kein Stream";
+    log(`Lichess-Zug blockiert: Stream nicht aktiv (${why})`, "err");
+    clearSelection();
+    return;
+  }
+  const body = promotion ? { from, to, promotion } : { from, to };
+  try {
+    const status = await api("POST", "/api/lichess/move", body);
+    handleLichessStatus(status, { paintBoard: true });
+    const session = status.session || {};
+    log(`Lichess-Zug ${from}${to}${promotion ? "=" + promotion.toUpperCase() : ""}`, "ok");
+    playMoveSound(
+      { status: session.status || "", gameOver: !!session.gameOver },
+      { capture: wasCapture, promotion: !!promotion }
+    );
+  } catch (e) {
+    log(`Lichess-Zug abgelehnt: ${e.message}`, "err");
+    clearSelection();
+  }
+}
+
+async function resignLichessGame() {
+  if (!lichessState.session?.gameId) return;
+  if (!confirm("Lichess-Partie wirklich aufgeben?")) return;
+  try {
+    const status = await api("POST", "/api/lichess/resign");
+    handleLichessStatus(status, { paintBoard: true });
+    log("Lichess-Partie aufgegeben", "err");
+  } catch (e) {
+    log(`Lichess-Aufgabe: ${e.message}`, "err");
+  }
+}
+
+async function disconnectLichessGame() {
+  try {
+    await api("POST", "/api/lichess/disconnect");
+    lichessState.session = null;
+    stopLichessPolling();
+    await refreshState();
+    log("Lichess getrennt", "ok");
+    refreshLichessStatus();
+  } catch (e) {
+    log(`Lichess-Trennen: ${e.message}`, "err");
+  }
+}
+
+if (lichessChallengeBtn) {
+  lichessChallengeBtn.addEventListener("click", createLichessChallenge);
+}
+if (lichessResignBtn) {
+  lichessResignBtn.addEventListener("click", resignLichessGame);
+}
+if (lichessDisconnectBtn) {
+  lichessDisconnectBtn.addEventListener("click", disconnectLichessGame);
+}
+
 // ---------- boot -----------------------------------------------------------
 
 buildBoard();
@@ -2275,6 +2777,7 @@ refreshState()
 refreshPersistenceStatus();
 refreshLiveStatus();
 refreshStockfishStatus();
+refreshLichessStatus();
 pingHealth();
 setInterval(pingHealth, 5000);
 setInterval(refreshStockfishStatus, 5000);
