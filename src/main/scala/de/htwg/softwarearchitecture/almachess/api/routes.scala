@@ -1,9 +1,10 @@
 package de.htwg.softwarearchitecture.almachess.api
 
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.*
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.{ContentType, HttpEntity, MediaTypes, StatusCodes}
 import akka.http.scaladsl.server.Directives.*
 import akka.http.scaladsl.server.Route
+import akka.stream.Materializer
 import de.htwg.softwarearchitecture.almachess.clients.{AiClient, LichessClient, NotationClient}
 import de.htwg.softwarearchitecture.almachess.control.Controller
 import de.htwg.softwarearchitecture.almachess.model.{Color, PieceType}
@@ -21,7 +22,7 @@ final class Routes(
     repository: Option[GameRepository] = None,
     liveStore: Option[LiveGameStore] = None,
     lichessClient: Option[LichessClient] = None
-)(using ec: ExecutionContext):
+)(using ec: ExecutionContext, mat: Materializer):
 
   // All mutating access to the Controller is serialized through this lock
   // so parallel HTTP requests cannot race on the shared mutable game state.
@@ -120,6 +121,31 @@ final class Routes(
                     case Right(_)  => complete(gameState)
                     case Left(err) => complete(StatusCodes.UnprocessableEntity -> ErrorResponse(err))
               }
+            }
+          }
+        },
+
+        // SSE proxy: opens a reactive-stream pipeline from the AI service
+        // (Stockfish info lines) through the API gateway to the browser.
+        // No buffering — backpressure flows end-to-end via Akka HTTP entities.
+        path("ai-move" / "stream") {
+          post {
+            entity(as[AiMoveRequest]) { req =>
+              val depth = req.depth.getOrElse(controller.currentAiDepth).max(1).min(40)
+              val fenSnapshot = lock.synchronized {
+                if controller.isGameOver then Left(s"game is over: ${controller.state.status}")
+                else Right(controller.toFen)
+              }
+              fenSnapshot match
+                case Left(err) =>
+                  complete(StatusCodes.Conflict -> ErrorResponse(err))
+                case Right(fen) =>
+                  val bytes = aiClient.bestMoveStream(fen, depth, req.movetime, req.skill)
+                  val entity = HttpEntity(
+                    ContentType(MediaTypes.`text/event-stream`),
+                    bytes
+                  )
+                  complete(entity)
             }
           }
         },

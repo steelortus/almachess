@@ -46,6 +46,46 @@ final class StockfishEngine private (
     catch case NonFatal(ex) => Left(s"stockfish error: ${ex.getMessage}")
   }
 
+  /** Same as `bestMove`, but invokes `onLine` for every raw UCI line the
+    * engine emits during the search (each `info ...` line, then the final
+    * `bestmove ...`). Used by the SSE route so the frontend can render the
+    * engine's thinking live. The synchronized lock still serialises searches
+    * across HTTP requests — only one stream at a time per engine instance. */
+  def bestMoveStreaming(
+      fen: String,
+      depth: Option[Int],
+      movetimeMs: Option[Int],
+      skill: Option[Int]
+  )(onLine: String => Unit): Either[String, String] = lock.synchronized {
+    try
+      skill.foreach { s =>
+        send(s"setoption name Skill Level value ${s.max(0).min(20)}")
+      }
+      send("ucinewgame")
+      send("isready")
+      readUntil(_ == "readyok")
+      send(s"position fen $fen")
+      val goCmd = movetimeMs match
+        case Some(ms) => s"go movetime ${ms.max(1)}"
+        case None     => s"go depth ${depth.getOrElse(12).max(1).min(40)}"
+      send(goCmd)
+      var bestUci: Option[String] = None
+      var done = false
+      var line: String = null
+      while !done && { line = in.readLine(); line != null } do
+        if line.startsWith("info ") then
+          onLine(line)
+        else if line.startsWith("bestmove") then
+          onLine(line)
+          val parts = line.split("\\s+")
+          if parts.length >= 2 && parts(1) != "(none)" then bestUci = Some(parts(1))
+          done = true
+      bestUci match
+        case Some(m) => Right(m)
+        case None    => Left("engine produced no move")
+    catch case NonFatal(ex) => Left(s"stockfish error: ${ex.getMessage}")
+  }
+
   /** Position evaluation: returns the deepest `info score` line plus the
     * `bestmove`. Both `centipawns` and `mate` are reported from White's POV
     * (UCI emits them from the side-to-move's POV; we flip when black moves).

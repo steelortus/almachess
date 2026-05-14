@@ -1,21 +1,26 @@
 package de.htwg.softwarearchitecture.almachess.api
 
+import akka.NotUsed
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.*
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.{ContentType, HttpEntity, MediaTypes, StatusCodes}
 import akka.http.scaladsl.server.Directives.*
 import akka.http.scaladsl.server.Route
+import akka.stream.{Materializer, OverflowStrategy}
+import akka.stream.scaladsl.{BroadcastHub, Keep, Source, SourceQueueWithComplete}
+import akka.util.ByteString
 import de.htwg.softwarearchitecture.almachess.clients.{AiClient, LichessClientApi}
 import de.htwg.softwarearchitecture.almachess.control.Controller
 import de.htwg.softwarearchitecture.almachess.model.{Color, GameState, Pos}
 import spray.json.*
 
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.*
 import scala.util.{Failure, Success}
 import scala.util.control.NonFatal
 
 import JsonFormats.given
 
-final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(using ec: ExecutionContext):
+final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(using ec: ExecutionContext, mat: Materializer):
 
   private val lock = new Object
   private val startFen = GameState.initial.toFen
@@ -40,6 +45,30 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
   )
 
   private var session: Option[BufferedSession] = None
+
+  // Reactive pub/sub for session updates. Producer is every mutation site
+  // (route handlers + Lichess NDJSON callbacks). Consumers are SSE subscribers
+  // on /api/lichess/session/stream — each materialises an independent
+  // downstream of the BroadcastHub. dropHead on the upstream queue prevents
+  // a slow subscriber from stalling the rest of the system.
+  private val (sessionQueue, sessionHub): (SourceQueueWithComplete[ByteString], Source[ByteString, NotUsed]) =
+    Source
+      .queue[ByteString](64, OverflowStrategy.dropHead)
+      .toMat(BroadcastHub.sink[ByteString](bufferSize = 8))(Keep.both)
+      .run()
+
+  // Keep the hub alive even with zero subscribers (otherwise the queue stops
+  // accepting offers after the first downstream cancels).
+  sessionHub.runWith(akka.stream.scaladsl.Sink.ignore)
+
+  private def encodeSession(dto: LichessSessionDto): ByteString =
+    ByteString(s"event: session\ndata: ${dto.toJson.compactPrint}\n\n")
+
+  private def publishSession(): Unit =
+    val snapshot = lock.synchronized(session.map(toDto))
+    snapshot.foreach { dto =>
+      val _ = sessionQueue.offer(encodeSession(dto))
+    }
 
   private def statusPayload: LichessStatusResponse =
     val current = lock.synchronized(session.map(toDto))
@@ -220,6 +249,7 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
         )
       }
     }
+    publishSession()
 
   private def handleStreamLine(gameId: String, line: String): Unit =
     try
@@ -251,12 +281,14 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
           updateFromState(gameId, fields)
         case _ =>
           ()
+      publishSession()
     catch case NonFatal(ex) =>
       lock.synchronized {
         session = session.map { s =>
           if s.gameId == gameId then s.copy(streamStatus = s"stream parse error: ${ex.getMessage}") else s
         }
       }
+      publishSession()
 
   private def startStream(c: LichessClientApi, gameId: String, mode: String): Unit =
     c.streamGameWithRetry(gameId, mode)(
@@ -279,6 +311,7 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
             case _ =>
               false
         }
+        publishSession()
         if shouldReattach then
           startStream(c, gameId, mode)
         else
@@ -299,6 +332,7 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
             if s.gameId == gameId then s.copy(status = tag, streamStatus = tag) else s
           }
         }
+        publishSession()
       case _ =>
         ()
     }
@@ -342,6 +376,7 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
                           streamStatus = "waiting for accept"
                         ))
                       }
+                      publishSession()
                       startStream(c, challenge.id, mode)
                       complete(StatusCodes.OK -> statusPayload)
                     case Success(Left(err)) =>
@@ -357,6 +392,25 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
     path("session") {
       get {
         complete(statusPayload)
+      }
+    }
+
+  // Reactive-stream subscription: each GET materialises an independent
+  // BroadcastHub downstream. We prepend the current session snapshot so
+  // late subscribers don't have to wait for the next mutation to render.
+  // Backpressure flows back through the hub buffer; if a single subscriber
+  // is slow, the hub starts dropping for *that* subscriber only.
+  private def sessionStreamRoute: Route =
+    path("session" / "stream") {
+      get {
+        val initial: Source[ByteString, NotUsed] =
+          lock.synchronized(session.map(toDto)) match
+            case Some(dto) => Source.single(encodeSession(dto))
+            case None      => Source.single(ByteString("event: session\ndata: null\n\n"))
+        val stream = initial
+          .concat(sessionHub)
+          .keepAlive(15.seconds, () => ByteString(": keepalive\n\n"))
+        complete(HttpEntity(ContentType(MediaTypes.`text/event-stream`), stream))
       }
     }
 
@@ -391,6 +445,7 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
                               else cur
                             }
                           }
+                          publishSession()
                           complete(statusPayload)
                         case Success(Left(err)) =>
                           complete(StatusCodes.BadGateway -> ErrorResponse(err))
@@ -449,6 +504,7 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
                         else cur
                       }
                     }
+                    publishSession()
                     complete(statusPayload)
                   case Success(Left(err)) =>
                     complete(StatusCodes.BadGateway -> ErrorResponse(err))
@@ -462,6 +518,8 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
     path("disconnect") {
       post {
         lock.synchronized { session = None }
+        // Best-effort: notify SSE subscribers that the session has been cleared.
+        val _ = sessionQueue.offer(ByteString("event: session\ndata: null\n\n"))
         complete(statusPayload)
       }
     }
@@ -519,6 +577,7 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
                                         else cur
                                       }
                                     }
+                                    publishSession()
                                     complete(LichessAutoMoveResponse(uci, statusPayload))
                                   case Success(Left(err)) =>
                                     complete(StatusCodes.BadGateway -> ErrorResponse(err))
@@ -539,6 +598,7 @@ final class LichessRoutes(client: Option[LichessClientApi], aiClient: AiClient)(
       concat(
         path("status") { get { complete(statusPayload) } },
         challengeRoute,
+        sessionStreamRoute,
         sessionRoute,
         legalMovesRoute,
         moveRoute,

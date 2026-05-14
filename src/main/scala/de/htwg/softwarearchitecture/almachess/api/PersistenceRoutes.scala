@@ -1,9 +1,10 @@
 package de.htwg.softwarearchitecture.almachess.api
 
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.*
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.{ContentType, HttpEntity, MediaTypes, StatusCodes}
 import akka.http.scaladsl.server.Directives.*
 import akka.http.scaladsl.server.Route
+import akka.util.ByteString
 import de.htwg.softwarearchitecture.almachess.control.Controller
 import de.htwg.softwarearchitecture.almachess.model.{GameState, PieceType}
 import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, GameSaveDto}
@@ -87,6 +88,21 @@ final class PersistenceRoutes(
                 case Failure(ex) =>
                   complete(StatusCodes.InternalServerError -> ErrorResponse(s"list failed: ${ex.getMessage}"))
               }
+            }
+          }
+        },
+        // Reactive-stream variant: emit each UCI move as its own SSE event.
+        // For Postgres this is a JDBC cursor (Slick db.stream → Reactive-
+        // Streams Publisher), so backpressure flows from the HTTP response
+        // all the way down to the cursor — long game histories never have
+        // to be materialised in memory on the server.
+        path(Segment / "moves" / "stream") { gameId =>
+          get {
+            withRepo { repo =>
+              val bytes = repo.streamMoves(gameId).zipWithIndex.map { case (uci, idx) =>
+                ByteString(s"id: $idx\nevent: move\ndata: $uci\n\n")
+              }
+              complete(HttpEntity(ContentType(MediaTypes.`text/event-stream`), bytes))
             }
           }
         },

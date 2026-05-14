@@ -4,15 +4,21 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.*
+import akka.http.scaladsl.marshalling.sse.EventStreamMarshalling.*
 import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.sse.ServerSentEvent
 import akka.http.scaladsl.server.Directives.*
 import akka.http.scaladsl.server.Route
+import akka.stream.{Materializer, OverflowStrategy}
+import akka.stream.scaladsl.Source
 import de.htwg.softwarearchitecture.almachess.ai.{ChessAI, StockfishEngine}
 import de.htwg.softwarearchitecture.almachess.api.*
 import de.htwg.softwarearchitecture.almachess.api.JsonFormats.given
 import de.htwg.softwarearchitecture.almachess.clients.AiClient
 import de.htwg.softwarearchitecture.almachess.parser.FenParser
 
+import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration.*
 import scala.util.{Failure, Success}
 
 object AiService:
@@ -42,7 +48,11 @@ object AiService:
   private val activeBackend: String  = if stockfish.isDefined then "stockfish" else "chess-ai"
   private val activeEngine: String   = stockfish.map(_.engineName).getOrElse("ChessAI (negamax)")
 
-  val route: Route =
+  // Background EC for blocking UCI I/O so the akka default dispatcher stays
+  // free. The streaming engine call parks on `in.readLine()`.
+  private val blockingEc: ExecutionContext = ExecutionContext.global
+
+  def route(using mat: Materializer): Route =
     concat(
       path("health") { get { complete(HealthResponse("ok")) } },
       path("ai" / "status") {
@@ -71,6 +81,55 @@ object AiService:
                     ChessAI.bestMove(state, depth) match
                       case None    => complete(BestMoveResponse(None, Some("no legal moves")))
                       case Some(m) => complete(BestMoveResponse(Some(AiClient.moveToUci(m)), None))
+          }
+        }
+      },
+      // Reactive-stream variant of /ai/bestmove. Returns a Server-Sent-Events
+      // response: one `info` event per UCI info line emitted by Stockfish
+      // during search, followed by one `bestmove` event with the final UCI
+      // move. Backpressure is enforced by the SourceQueue (dropHead under
+      // load — clients won't slow down the engine, they just miss intermediate
+      // depth reports).
+      path("ai" / "bestmove" / "stream") {
+        post {
+          entity(as[BestMoveRequest]) { req =>
+            stockfish match
+              case Some(engine) if engine.isAlive =>
+                val (queue, source) = Source
+                  .queue[ServerSentEvent](128, OverflowStrategy.dropHead)
+                  .preMaterialize()
+                Future {
+                  val result = engine.bestMoveStreaming(req.fen, req.depth, req.movetime, req.skill) { line =>
+                    val ev =
+                      if line.startsWith("info ") then
+                        ServerSentEvent(line.stripPrefix("info ").trim, "info")
+                      else if line.startsWith("bestmove") then
+                        val mv = line.split("\\s+").lift(1).getOrElse("")
+                        ServerSentEvent(mv, "bestmove")
+                      else ServerSentEvent(line, "raw")
+                    val _ = queue.offer(ev)
+                  }
+                  result match
+                    case Left(err) =>
+                      val _ = queue.offer(ServerSentEvent(err, "error"))
+                    case Right(_) => ()
+                  queue.complete()
+                }(blockingEc)
+                complete(source.keepAlive(15.seconds, () => ServerSentEvent.heartbeat))
+              case _ =>
+                // ChessAI fallback: emit a single `bestmove` event (no
+                // progressive info — negamax doesn't expose iterative deepening
+                // lines). Keeps the SSE contract stable so the client doesn't
+                // need a separate code path.
+                FenParser.parse(req.fen) match
+                  case Left(err) =>
+                    complete(StatusCodes.BadRequest -> ErrorResponse(err))
+                  case Right(state) =>
+                    val depth = req.depth.getOrElse(3).max(1).min(6)
+                    val event = ChessAI.bestMove(state, depth) match
+                      case Some(m) => ServerSentEvent(AiClient.moveToUci(m), "bestmove")
+                      case None    => ServerSentEvent("no legal moves", "error")
+                    complete(Source.single(event))
           }
         }
       },
