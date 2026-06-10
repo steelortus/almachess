@@ -7,6 +7,7 @@ import akka.http.scaladsl.server.Route
 import akka.stream.Materializer
 import de.htwg.softwarearchitecture.almachess.clients.{AiClient, LichessClient, NotationClient}
 import de.htwg.softwarearchitecture.almachess.control.Controller
+import de.htwg.softwarearchitecture.almachess.messaging.{MoveEvent, MoveEventProducer}
 import de.htwg.softwarearchitecture.almachess.model.{Color, PieceType}
 import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, LiveGameStore}
 
@@ -21,7 +22,8 @@ final class Routes(
     notationClient: NotationClient,
     repository: Option[GameRepository] = None,
     liveStore: Option[LiveGameStore] = None,
-    lichessClient: Option[LichessClient] = None
+    lichessClient: Option[LichessClient] = None,
+    moveProducer: MoveEventProducer = MoveEventProducer.Disabled
 )(using ec: ExecutionContext, mat: Materializer):
 
   // All mutating access to the Controller is serialized through this lock
@@ -41,6 +43,17 @@ final class Routes(
       case _                => ""
     }.getOrElse("")
     m.from.toAlgebraic + m.to.toAlgebraic + promo
+
+  // Fire-and-forget Kafka publish for a successful move. The producer is
+  // a Source.queue → Producer.plainSink pipeline (see MoveEventProducer),
+  // so this call returns immediately even if the broker is slow.
+  private def publishMove(source: String, uci: String): Unit =
+    val _ = moveProducer.publish(MoveEvent(
+      source = source,
+      uci    = uci,
+      fen    = lock.synchronized(controller.toFen),
+      ts     = System.currentTimeMillis()
+    ))
 
   private def gameState: GameStateResponse = lock.synchronized {
     GameStateResponse(
@@ -118,7 +131,10 @@ final class Routes(
                   complete(StatusCodes.Conflict -> ErrorResponse(s"game is over: ${controller.state.status}"))
                 else
                   controller.move(req.from, req.to, req.promotion) match
-                    case Right(_)  => complete(gameState)
+                    case Right(_) =>
+                      val uci = controller.lastMove.map(moveToUci).getOrElse("")
+                      publishMove("api/move", uci)
+                      complete(gameState)
                     case Left(err) => complete(StatusCodes.UnprocessableEntity -> ErrorResponse(err))
               }
             }
@@ -169,7 +185,9 @@ final class Routes(
                           complete(StatusCodes.Conflict -> ErrorResponse("state changed during ai computation"))
                         else
                           controller.move(uci) match
-                            case Right(_)  => complete(AiMoveResponse(uci, gameState))
+                            case Right(_) =>
+                              publishMove("api/ai-move", uci)
+                              complete(AiMoveResponse(uci, gameState))
                             case Left(err) => complete(StatusCodes.UnprocessableEntity -> ErrorResponse(err))
                       }
                     case Success(Left(err)) =>

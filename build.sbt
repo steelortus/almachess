@@ -16,6 +16,10 @@ lazy val root = (project in file("."))
       "com.lihaoyi" %% "upickle" % "3.3.1",
       ("com.typesafe.akka" %% "akka-actor-typed"     % akkaVersion).cross(CrossVersion.for3Use2_13),
       ("com.typesafe.akka" %% "akka-stream"          % akkaVersion).cross(CrossVersion.for3Use2_13),
+      // Alpakka Kafka — connects Akka Streams to Kafka topics. Producer.plainSink
+      // / Consumer.plainSource bridge between our reactive pipelines and the
+      // broker, with end-to-end backpressure.
+      ("com.typesafe.akka" %% "akka-stream-kafka"    % "4.0.2").cross(CrossVersion.for3Use2_13),
       ("com.typesafe.akka" %% "akka-http"            % akkaHttpVersion).cross(CrossVersion.for3Use2_13),
       ("com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion).cross(CrossVersion.for3Use2_13),
       ("com.typesafe.akka" %% "akka-slf4j"           % akkaVersion).cross(CrossVersion.for3Use2_13),

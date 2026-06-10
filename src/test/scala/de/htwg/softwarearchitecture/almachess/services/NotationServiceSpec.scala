@@ -10,7 +10,7 @@ import de.htwg.softwarearchitecture.almachess.api.JsonFormats.given
 
 class NotationServiceSpec extends AnyWordSpec with Matchers with ScalatestRouteTest:
 
-  private val routes = NotationService.route
+  private val routes = NotationService.route(None)
 
   "GET /health" should {
     "return ok" in {
