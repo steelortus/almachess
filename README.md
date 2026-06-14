@@ -79,6 +79,47 @@ curl -fsS -X POST http://localhost:8083/api/game/ai-move \
 
 Die vollständige Endpunkt-Übersicht steht in [`TEST-SPICKZETTEL.txt`](TEST-SPICKZETTEL.txt).
 
+### Spark-Analytics (`analytics/spark`)
+
+Eigenständiges Scala-2.13-Subprojekt (Spark gibt es nicht für Scala 3 — gleiches
+Muster wie das Gatling-Subprojekt). Es ist nur über das Event-Format auf dem
+Kafka-Topic `almachess.moves` mit dem Rest gekoppelt; jedes `MoveEvent` trägt
+dafür `gameId` und `status` ("checkmate - White wins", "stalemate", …).
+
+Spark braucht Java 17. Auf neueren JDKs vor dem Start einmal setzen:
+
+```powershell
+$env:ANALYTICS_JAVA_HOME = "C:\Pfad\zu\jdk-17"
+```
+
+Für den **Streaming**-Job auf Windows zusätzlich winutils (Hadoop-Shim für
+Checkpoint-Dateien; der Batch-Job läuft auch ohne): `winutils.exe` +
+`hadoop.dll` aus https://github.com/cdarlint/winutils (hadoop-3.3.5/bin)
+nach `%USERPROFILE%\.hadoop\bin` legen und
+`$env:HADOOP_HOME = "$env:USERPROFILE\.hadoop"` setzen.
+
+**Schritt 1 — Batch aus Datei.** Liest `analytics/data/moves.jsonl`
+(eine MoveEvent-JSON-Zeile pro Zug, exakt das Topic-Format) und rechnet:
+Siege Weiß/Schwarz/Patt, Siege Mensch vs. KI, schnellste Matts (Highscore),
+beliebteste Eröffnungen, Ø-Partielänge.
+
+```bash
+sbt "analytics/runMain de.htwg.softwarearchitecture.almachess.analytics.GameStatsBatch"
+# Beispieldaten neu erzeugen (spielt Miniaturpartien durch den echten Controller):
+sbt "runMain de.htwg.softwarearchitecture.almachess.tools.AnalyticsSampleData"
+```
+
+**Schritt 2 — Streaming aus Kafka.** Dieselben Aggregationen (geteilter Code in
+`Aggregations.scala`), aber live per Structured Streaming vom Topic, plus
+Züge/Minute im Tumbling Window. Der Compose-Broker hat dafür einen
+EXTERNAL-Listener auf `localhost:9094`.
+
+```bash
+docker compose up -d            # Broker + Services starten
+sbt "analytics/runMain de.htwg.softwarearchitecture.almachess.analytics.MoveStreamStats"
+# dann im Web-Frontend (localhost:8079) Züge spielen und die Konsole beobachten
+```
+
 todo
 1. ai spiel funktion einbauen
 2. ai logik verbessern damit sie schneller ist und schlauer

@@ -44,14 +44,24 @@ final class Routes(
     }.getOrElse("")
     m.from.toAlgebraic + m.to.toAlgebraic + promo
 
+  // Groups the MoveEvents of one played game on the Kafka topic. Rotates on
+  // /reset so analytics consumers (Spark) can aggregate per game. Guarded by
+  // `lock` like the controller it shadows.
+  private var currentGameId: String = java.util.UUID.randomUUID().toString
+
   // Fire-and-forget Kafka publish for a successful move. The producer is
   // a Source.queue → Producer.plainSink pipeline (see MoveEventProducer),
   // so this call returns immediately even if the broker is slow.
   private def publishMove(source: String, uci: String): Unit =
+    val (fen, gameId, status) = lock.synchronized {
+      (controller.toFen, currentGameId, controller.state.status)
+    }
     val _ = moveProducer.publish(MoveEvent(
       source = source,
       uci    = uci,
-      fen    = lock.synchronized(controller.toFen),
+      fen    = fen,
+      gameId = gameId,
+      status = status,
       ts     = System.currentTimeMillis()
     ))
 
@@ -106,7 +116,10 @@ final class Routes(
 
         path("reset") {
           post {
-            lock.synchronized(controller.reset())
+            lock.synchronized {
+              controller.reset()
+              currentGameId = java.util.UUID.randomUUID().toString
+            }
             complete(gameState)
           }
         },
