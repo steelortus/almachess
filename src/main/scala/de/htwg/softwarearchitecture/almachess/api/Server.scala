@@ -7,6 +7,7 @@ import de.htwg.softwarearchitecture.almachess.clients.{AiClient, LichessClient, 
 import de.htwg.softwarearchitecture.almachess.control.Controller
 import de.htwg.softwarearchitecture.almachess.messaging.{KafkaConfig, MoveEventProducer}
 import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, LiveGameStore, MongoGameRepository, PostgresGameRepository, RedisLiveGameStore}
+import de.htwg.softwarearchitecture.almachess.tournament.TournamentManager
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -55,7 +56,8 @@ object Server:
         println("Kafka disabled (KAFKA_BOOTSTRAP not set)")
         MoveEventProducer.Disabled
 
-    val routes = new Routes(controller, aiClient, notationClient, repository, liveStore, lichessClient, moveProducer)
+    val tournamentManager = new TournamentManager()
+    val routes = new Routes(controller, aiClient, notationClient, repository, liveStore, lichessClient, moveProducer, Some(tournamentManager))
     val binding = Http().newServerAt(host, port).bind(routes.all)
     binding.onComplete {
       case Success(b) =>

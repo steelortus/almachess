@@ -10,6 +10,7 @@ import de.htwg.softwarearchitecture.almachess.control.Controller
 import de.htwg.softwarearchitecture.almachess.messaging.{MoveEvent, MoveEventProducer}
 import de.htwg.softwarearchitecture.almachess.model.{Color, PieceType}
 import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, LiveGameStore}
+import de.htwg.softwarearchitecture.almachess.tournament.TournamentManager
 
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
@@ -23,7 +24,8 @@ final class Routes(
     repository: Option[GameRepository] = None,
     liveStore: Option[LiveGameStore] = None,
     lichessClient: Option[LichessClient] = None,
-    moveProducer: MoveEventProducer = MoveEventProducer.Disabled
+    moveProducer: MoveEventProducer = MoveEventProducer.Disabled,
+    tournamentManager: Option[TournamentManager] = None
 )(using ec: ExecutionContext, mat: Materializer):
 
   // All mutating access to the Controller is serialized through this lock
@@ -33,6 +35,7 @@ final class Routes(
   private val persistenceRoutes = new PersistenceRoutes(controller, repository, lock)
   private val liveRoutes        = new LiveGameRoutes(controller, liveStore, lock)
   private val lichessRoutes     = new LichessRoutes(lichessClient, aiClient)
+  private val tournamentRoutes  = tournamentManager.map(new TournamentRoutes(_))
 
   private def moveToUci(m: de.htwg.softwarearchitecture.almachess.model.Move): String =
     val promo = m.promotion.map {
@@ -280,4 +283,9 @@ final class Routes(
       )
     }
 
-  val all: Route = concat(healthRoutes, gameRoutes, fenRoutes, pgnRoutes, persistenceRoutes.all, liveRoutes.all, lichessRoutes.all)
+  val all: Route =
+    val core = concat(healthRoutes, gameRoutes, fenRoutes, pgnRoutes,
+                      persistenceRoutes.all, liveRoutes.all, lichessRoutes.all)
+    tournamentRoutes match
+      case Some(tr) => concat(core, tr.all)
+      case None     => core
