@@ -1,0 +1,63 @@
+# Artillery Stresstest für die AlmaChess Persistence-API.
+#
+# Wichtig: Artillery ist OPEN-LOOP — "arrivalRate" = neue Szenarien pro Sekunde,
+# nicht gleichzeitige Clients (so wie k6 mit "vus"). Stauen sich Anfragen,
+# arbeitet Artillery trotzdem stur weiter und das macht Tail-Latenz sichtbar,
+# wo k6 (closed-loop) sie eher versteckt.
+#
+# Reproduktion:
+#   docker run --rm -v "${PWD}/perf/artillery:/scripts" \
+#     -v "${PWD}/perf/results:/out" \
+#     artilleryio/artillery:latest run \
+#     --output /out/artillery-stress.json \
+#     /scripts/persistence_stress.yml
+
+config:
+  target: 'http://host.docker.internal:8083'
+  http:
+    timeout: 10           # Sekunden, gleiche Schwelle wie der k6-Stresstest
+    pool: 1000            # gleichzeitige TCP-Sockets zum Server
+  phases:
+    - name: warm
+      duration: 30
+      arrivalRate: 10
+    - name: L030
+      duration: 30
+      arrivalRate: 30
+    - name: L075
+      duration: 30
+      arrivalRate: 75
+    - name: L150
+      duration: 30
+      arrivalRate: 150
+    - name: L300
+      duration: 30
+      arrivalRate: 300
+    - name: L500
+      duration: 30
+      arrivalRate: 500
+  # Plugins für Metrik-Aggregation pro Phase
+  plugins:
+    metrics-by-endpoint: {}
+  processor: './stress_helpers.js'
+
+scenarios:
+  - name: persistence-mix
+    flow:
+      - function: 'pickEndpoint'
+      # 80% GET by id, 15% LIST, 5% POST upsert.
+      - get:
+          ifTrue: 'route === "get"'
+          url: '/api/persistence/games/{{ seedId }}'
+          expect:
+            - statusCode: 200
+      - get:
+          ifTrue: 'route === "list"'
+          url: '/api/persistence/games'
+          expect:
+            - statusCode: 200
+      - post:
+          ifTrue: 'route === "post"'
+          url: '/api/persistence/games/{{ seedId }}'
+          expect:
+            - statusCode: 200

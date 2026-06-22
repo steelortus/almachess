@@ -1,13 +1,16 @@
 package de.htwg.softwarearchitecture.almachess.api
 
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.*
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.{ContentType, HttpEntity, MediaTypes, StatusCodes}
 import akka.http.scaladsl.server.Directives.*
 import akka.http.scaladsl.server.Route
-import de.htwg.softwarearchitecture.almachess.clients.{AiClient, NotationClient}
+import akka.stream.Materializer
+import de.htwg.softwarearchitecture.almachess.clients.{AiClient, LichessClient, NotationClient}
 import de.htwg.softwarearchitecture.almachess.control.Controller
+import de.htwg.softwarearchitecture.almachess.messaging.{MoveEvent, MoveEventProducer}
 import de.htwg.softwarearchitecture.almachess.model.{Color, PieceType}
 import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, LiveGameStore}
+import de.htwg.softwarearchitecture.almachess.tournament.TournamentManager
 
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
@@ -19,8 +22,11 @@ final class Routes(
     aiClient: AiClient,
     notationClient: NotationClient,
     repository: Option[GameRepository] = None,
-    liveStore: Option[LiveGameStore] = None
-)(using ec: ExecutionContext):
+    liveStore: Option[LiveGameStore] = None,
+    lichessClient: Option[LichessClient] = None,
+    moveProducer: MoveEventProducer = MoveEventProducer.Disabled,
+    tournamentManager: Option[TournamentManager] = None
+)(using ec: ExecutionContext, mat: Materializer):
 
   // All mutating access to the Controller is serialized through this lock
   // so parallel HTTP requests cannot race on the shared mutable game state.
@@ -28,6 +34,8 @@ final class Routes(
 
   private val persistenceRoutes = new PersistenceRoutes(controller, repository, lock)
   private val liveRoutes        = new LiveGameRoutes(controller, liveStore, lock)
+  private val lichessRoutes     = new LichessRoutes(lichessClient, aiClient)
+  private val tournamentRoutes  = tournamentManager.map(new TournamentRoutes(_))
 
   private def moveToUci(m: de.htwg.softwarearchitecture.almachess.model.Move): String =
     val promo = m.promotion.map {
@@ -38,6 +46,27 @@ final class Routes(
       case _                => ""
     }.getOrElse("")
     m.from.toAlgebraic + m.to.toAlgebraic + promo
+
+  // Groups the MoveEvents of one played game on the Kafka topic. Rotates on
+  // /reset so analytics consumers (Spark) can aggregate per game. Guarded by
+  // `lock` like the controller it shadows.
+  private var currentGameId: String = java.util.UUID.randomUUID().toString
+
+  // Fire-and-forget Kafka publish for a successful move. The producer is
+  // a Source.queue → Producer.plainSink pipeline (see MoveEventProducer),
+  // so this call returns immediately even if the broker is slow.
+  private def publishMove(source: String, uci: String): Unit =
+    val (fen, gameId, status) = lock.synchronized {
+      (controller.toFen, currentGameId, controller.state.status)
+    }
+    val _ = moveProducer.publish(MoveEvent(
+      source = source,
+      uci    = uci,
+      fen    = fen,
+      gameId = gameId,
+      status = status,
+      ts     = System.currentTimeMillis()
+    ))
 
   private def gameState: GameStateResponse = lock.synchronized {
     GameStateResponse(
@@ -90,7 +119,10 @@ final class Routes(
 
         path("reset") {
           post {
-            lock.synchronized(controller.reset())
+            lock.synchronized {
+              controller.reset()
+              currentGameId = java.util.UUID.randomUUID().toString
+            }
             complete(gameState)
           }
         },
@@ -115,9 +147,37 @@ final class Routes(
                   complete(StatusCodes.Conflict -> ErrorResponse(s"game is over: ${controller.state.status}"))
                 else
                   controller.move(req.from, req.to, req.promotion) match
-                    case Right(_)  => complete(gameState)
+                    case Right(_) =>
+                      val uci = controller.lastMove.map(moveToUci).getOrElse("")
+                      publishMove("api/move", uci)
+                      complete(gameState)
                     case Left(err) => complete(StatusCodes.UnprocessableEntity -> ErrorResponse(err))
               }
+            }
+          }
+        },
+
+        // SSE proxy: opens a reactive-stream pipeline from the AI service
+        // (Stockfish info lines) through the API gateway to the browser.
+        // No buffering — backpressure flows end-to-end via Akka HTTP entities.
+        path("ai-move" / "stream") {
+          post {
+            entity(as[AiMoveRequest]) { req =>
+              val depth = req.depth.getOrElse(controller.currentAiDepth).max(1).min(40)
+              val fenSnapshot = lock.synchronized {
+                if controller.isGameOver then Left(s"game is over: ${controller.state.status}")
+                else Right(controller.toFen)
+              }
+              fenSnapshot match
+                case Left(err) =>
+                  complete(StatusCodes.Conflict -> ErrorResponse(err))
+                case Right(fen) =>
+                  val bytes = aiClient.bestMoveStream(fen, depth, req.movetime, req.skill)
+                  val entity = HttpEntity(
+                    ContentType(MediaTypes.`text/event-stream`),
+                    bytes
+                  )
+                  complete(entity)
             }
           }
         },
@@ -141,7 +201,9 @@ final class Routes(
                           complete(StatusCodes.Conflict -> ErrorResponse("state changed during ai computation"))
                         else
                           controller.move(uci) match
-                            case Right(_)  => complete(AiMoveResponse(uci, gameState))
+                            case Right(_) =>
+                              publishMove("api/ai-move", uci)
+                              complete(AiMoveResponse(uci, gameState))
                             case Left(err) => complete(StatusCodes.UnprocessableEntity -> ErrorResponse(err))
                       }
                     case Success(Left(err)) =>
@@ -221,4 +283,9 @@ final class Routes(
       )
     }
 
-  val all: Route = concat(healthRoutes, gameRoutes, fenRoutes, pgnRoutes, persistenceRoutes.all, liveRoutes.all)
+  val all: Route =
+    val core = concat(healthRoutes, gameRoutes, fenRoutes, pgnRoutes,
+                      persistenceRoutes.all, liveRoutes.all, lichessRoutes.all)
+    tournamentRoutes match
+      case Some(tr) => concat(core, tr.all)
+      case None     => core

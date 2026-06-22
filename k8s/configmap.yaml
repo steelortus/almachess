@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: almachess-config
+  namespace: almachess
+data:
+  # API wiring
+  ALMACHESS_HOST: "0.0.0.0"
+  ALMACHESS_PORT: "8083"
+  ALMACHESS_AI_URL: "http://ai-service:8082"
+  ALMACHESS_NOTATION_URL: "http://notation-service:8084"
+  ALMACHESS_DB: "mongo"
+
+  # Notation service
+  NOTATION_HOST: "0.0.0.0"
+  NOTATION_PORT: "8084"
+
+  # AI service
+  AI_HOST: "0.0.0.0"
+  AI_PORT: "8082"
+  AI_ENGINE: "stockfish"
+  STOCKFISH_PATH: "/usr/games/stockfish"
+
+  # Postgres (non-secret bits)
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "almachess"
+  POSTGRES_USER: "almachess"
+
+  # Mongo
+  MONGO_URI: "mongodb://mongo:27017"
+  MONGO_DB: "almachess"
+
+  # Redis
+  REDIS_ENABLED: "true"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_TTL_SECONDS: "1800"
+
+  # Lichess integration — base URL is non-secret. The two access tokens live
+  # in the Secret (almachess-secrets). When tokens are absent the API runs
+  # with the Lichess integration disabled.
+  LICHESS_BASE_URL: "https://lichess.org"

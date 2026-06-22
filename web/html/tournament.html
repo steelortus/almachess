@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>AlmaChess — Tournament</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+           background: #1f2530; color: #d8dde6; display: flex; flex-direction: column; }
+    /* === Header (single thin line) === */
+    header { background: #2a3142; padding: 8px 16px; display: flex; align-items: center;
+             gap: 14px; border-bottom: 1px solid #3a4257; flex-shrink: 0; height: 44px; }
+    header h1 { margin: 0; font-size: 16px; flex-shrink: 0; }
+    header .meta { display: flex; gap: 8px; align-items: center; flex: 1; font-size: 12px;
+                   color: #9aa6c0; }
+    header a { color: #88a2d8; text-decoration: none; font-size: 13px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+             border-radius: 12px; font-size: 11px; font-weight: 600; background: #3a4257; }
+    .badge.idle       { background: #3a4257; }
+    .badge.connecting { background: #735b1f; }
+    .badge.joined     { background: #1f6073; }
+    .badge.playing    { background: #1f7340; color: white; }
+    .badge.finished   { background: #4a3a73; color: white; }
+    .badge.error      { background: #8a2b2b; color: white; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .meta-chip { font-family: ui-monospace, Consolas, monospace; color: #c2cce4;
+                 background: #1c212c; padding: 2px 7px; border-radius: 3px; font-size: 11px; }
+    /* === Main grid === */
+    main { display: grid; grid-template-columns: 420px 1fr; gap: 12px; padding: 12px;
+           flex: 1; min-height: 0; }
+    .card { background: #2a3142; border: 1px solid #3a4257; border-radius: 8px;
+            padding: 12px 14px; display: flex; flex-direction: column; min-height: 0; }
+    .card.config { overflow-y: auto; }
+    .card h2 { margin: 0 0 8px; font-size: 13px; color: #c2cce4; font-weight: 600;
+               text-transform: uppercase; letter-spacing: 0.3px; }
+    /* === Form === */
+    label { display: block; font-size: 12px; color: #9aa6c0; margin: 8px 0 3px; }
+    input[type="text"], input[type="number"], select {
+      width: 100%; padding: 6px 8px; background: #1c212c; border: 1px solid #3a4257;
+      color: #e5eaf2; border-radius: 4px; font: inherit; font-size: 12px; }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      outline: none; border-color: #88a2d8; }
+    input[type="range"] { width: 100%; accent-color: #88a2d8; }
+    .row { display: flex; gap: 8px; align-items: end; }
+    .row > * { flex: 1; }
+    .row label { margin-bottom: 3px; }
+    /* Engine toggle */
+    .engine-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+                   margin: 4px 0 8px; }
+    .engine-pick label { padding: 7px 8px; background: #1c212c; border: 1px solid #3a4257;
+                         border-radius: 4px; text-align: center; cursor: pointer; margin: 0;
+                         color: #d8dde6; font-size: 12px; font-weight: 500;
+                         transition: border-color .15s; }
+    .engine-pick label:has(input:checked) { border-color: #88a2d8; background: #28344a;
+                                            color: #c2d4f6; }
+    .engine-pick input { display: none; }
+    /* Slider with value */
+    .slider-row { display: grid; grid-template-columns: 1fr 38px; gap: 8px;
+                  align-items: center; }
+    .slider-row span { text-align: right; color: #c2cce4; font-variant-numeric: tabular-nums;
+                       font-size: 12px; }
+    .hint { font-size: 11px; color: #758095; margin: 2px 0; line-height: 1.35; }
+    /* Buttons */
+    .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+    button { background: #4960a0; color: white; border: 0; padding: 9px 14px;
+             border-radius: 4px; cursor: pointer; font: inherit; font-size: 13px;
+             font-weight: 500; transition: background .15s; }
+    button:hover { background: #5a73be; }
+    button.primary { background: #2f7349; flex: 1; }
+    button.primary:hover { background: #3a8a58; }
+    button.secondary { background: #3a4257; }
+    button.secondary:hover { background: #4a536a; }
+    button:disabled { background: #3a4257; opacity: 0.55; cursor: not-allowed; }
+    /* Advanced details */
+    details { margin-top: 10px; background: #1c212c; border: 1px solid #3a4257;
+              border-radius: 4px; padding: 0; }
+    details summary { padding: 6px 10px; cursor: pointer; font-size: 12px;
+                      color: #9aa6c0; user-select: none; }
+    details summary:hover { color: #c2cce4; }
+    details > div { padding: 0 10px 10px; }
+    /* AiService availability dot */
+    .ai-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                 margin-left: 6px; vertical-align: middle; background: #758095; }
+    .ai-status.ok   { background: #4caf50; }
+    .ai-status.bad  { background: #d85050; }
+    /* === Log === */
+    #logbox { background: #15191f; border: 1px solid #3a4257; border-radius: 6px;
+              padding: 8px 10px; flex: 1; min-height: 0; overflow-y: auto;
+              font: 11.5px/1.45 ui-monospace, Consolas, monospace; color: #c2cce4; }
+    #logbox div.l { white-space: pre-wrap; word-break: break-word; }
+    #logbox div.l.game  { color: #88c4a0; }
+    #logbox div.l.move  { color: #e0b88a; }
+    #logbox div.l.error { color: #ec8585; }
+    #logbox div.l.dim   { color: #758095; }
+    .log-controls { display: flex; justify-content: space-between; align-items: center;
+                    margin-bottom: 6px; }
+    .log-controls .right { display: flex; gap: 6px; }
+    .log-controls button { padding: 4px 10px; font-size: 11px; background: #3a4257; }
+    /* Result strip at bottom of log */
+    .result-strip { margin-top: 6px; padding: 6px 10px; border-radius: 4px;
+                    background: #1c212c; border: 1px solid #3a4257; font-size: 12px;
+                    color: #c2cce4; display: none; }
+    .result-strip.win  { background: #1f4733; border-color: #2f7349; color: #c8eeda; }
+    .result-strip.loss { background: #4a2424; border-color: #8a2b2b; color: #f0c8c8; }
+    .result-strip.draw { background: #3a3a4a; border-color: #5a5a73; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🏆 AlmaChess Tournament</h1>
+    <div class="meta">
+      <span id="status-badge" class="badge idle"><span class="dot"></span>Idle</span>
+      <span id="status-msg">bereit</span>
+      <span id="meta-tid" class="meta-chip" hidden></span>
+      <span id="meta-bot" class="meta-chip" hidden></span>
+    </div>
+    <a href="index.html">← Hauptseite</a>
+  </header>
+
+  <main>
+    <!-- ===== CONFIG (left) ===== -->
+    <section class="card config">
+      <h2>Konfiguration</h2>
+
+      <label for="cfg-base">Tournament-Server</label>
+      <input id="cfg-base" type="text" value="http://141.37.123.132:8086" />
+
+      <label for="cfg-botname">Bot-Name</label>
+      <input id="cfg-botname" type="text" value="AlMaChess" />
+
+      <label>Engine</label>
+      <div class="engine-pick">
+        <label><input type="radio" name="engine" value="stockfish" checked/>Stockfish</label>
+        <label><input type="radio" name="engine" value="integrated"/>Negamax</label>
+      </div>
+
+      <!-- ===== Stockfish settings ===== -->
+      <div id="cfg-stockfish">
+        <label for="cfg-ai-url">AiService-URL
+          <span id="ai-status-dot" class="ai-status" title="unbekannt"></span>
+        </label>
+        <input id="cfg-ai-url" type="text" value="http://ai-service:8082" />
+        <p class="hint">docker compose: <code>http://ai-service:8082</code> · lokal: <code>http://localhost:8082</code></p>
+
+        <div class="row">
+          <div>
+            <label>Tiefe</label>
+            <div class="slider-row">
+              <input id="cfg-sf-depth" type="range" min="1" max="20" value="8"/>
+              <span id="cfg-sf-depth-val">8</span>
+            </div>
+          </div>
+          <div>
+            <label>Skill</label>
+            <div class="slider-row">
+              <input id="cfg-sf-skill" type="range" min="0" max="20" value="20"/>
+              <span id="cfg-sf-skill-val">20</span>
+            </div>
+          </div>
+        </div>
+        <p class="hint">depth 8 ≈ 50-200ms/Zug. movetime nur in „Erweitert" relevant.</p>
+      </div>
+
+      <!-- ===== Negamax settings ===== -->
+      <div id="cfg-integrated" hidden>
+        <label>Tiefe</label>
+        <div class="slider-row">
+          <input id="cfg-int-depth" type="range" min="1" max="5" value="2"/>
+          <span id="cfg-int-depth-val">2</span>
+        </div>
+        <p class="hint">Negamax: 1=instant, 2≈300ms, 3≈3s, 4≈30s, 5≈3min je Zug</p>
+      </div>
+
+      <!-- ===== Self-test row ===== -->
+      <div class="row" style="margin-top: 14px;">
+        <div>
+          <label>Bedenkzeit Selbst-Test</label>
+          <div class="slider-row">
+            <input id="qs-clock" type="range" min="10" max="600" step="10" value="60"/>
+            <span id="qs-clock-val">60s</span>
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;height:25px;">
+          <input id="qs-sparring" type="checkbox" checked />Sparring-Bot
+        </label>
+      </div>
+
+      <div class="btn-row">
+        <button id="btn-quickstart" class="primary">🧪 Selbst-Test starten</button>
+        <button id="btn-stop" class="secondary" disabled>Stop</button>
+      </div>
+
+      <!-- ===== Advanced ===== -->
+      <details>
+        <summary>Erweitert: spezifisches Turnier · movetime · API-Override</summary>
+        <div>
+          <label for="cfg-tid">Turnier-ID beitreten</label>
+          <input id="cfg-tid" type="text" placeholder="leer = neues per Selbst-Test"/>
+          <button id="btn-list" class="secondary" style="margin-top:6px;width:100%">
+            Verfügbare Turniere laden
+          </button>
+          <select id="cfg-tid-select" style="margin-top:6px" hidden></select>
+          <button id="btn-join" class="secondary" style="margin-top:6px;width:100%">
+            Beitreten (ohne Sparring)
+          </button>
+
+          <label for="cfg-sf-movetime" style="margin-top:12px;">Stockfish movetime (ms, optional)</label>
+          <input id="cfg-sf-movetime" type="number" min="100" step="100"
+                 placeholder="leer = nur depth-Stop" />
+          <p class="hint">Setzt feste Zugzeit. Mit Selbst-Test-Clock kompatibel halten!</p>
+        </div>
+      </details>
+    </section>
+
+    <!-- ===== LOG (right) ===== -->
+    <section class="card">
+      <div class="log-controls">
+        <h2 style="margin: 0;">Live-Log</h2>
+        <div class="right">
+          <button id="btn-pause" title="auto-scroll pausieren">⏸ folgen</button>
+          <button id="btn-clear">⌫ leeren</button>
+        </div>
+      </div>
+      <div id="logbox" aria-live="polite"></div>
+      <div id="result-strip" class="result-strip"></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    // The API base. Default: same origin (nginx proxies /api/* in docker compose).
+    // Override with ?api=http://host:port for cross-origin dev.
+    const ALMACHESS_API = (new URLSearchParams(location.search).get('api') || '').replace(/\/$/, '');
+    const api = (path) => ALMACHESS_API + path;
+
+    // ---- persist settings in localStorage ----
+    const PERSIST_KEYS = ['cfg-base','cfg-botname','cfg-ai-url','cfg-sf-depth',
+                          'cfg-sf-skill','cfg-int-depth','qs-clock','cfg-tid','cfg-sf-movetime'];
+    function load() {
+      try {
+        const s = JSON.parse(localStorage.getItem('almachess-tournament') || '{}');
+        PERSIST_KEYS.forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+        if (s.engine) document.querySelector(`input[name="engine"][value="${s.engine}"]`).checked = true;
+        if (s.sparring != null) $('qs-sparring').checked = s.sparring;
+        // Sanity guard: with Stockfish at high depth, a tiny clock guarantees a
+        // timeout loss. Auto-bump the slider if persisted state would mismatch.
+        if (s.engine === 'stockfish' && parseInt($('qs-clock').value, 10) < 30) {
+          $('qs-clock').value = 60;
+        }
+      } catch (_) {}
+    }
+    function save() {
+      const s = {};
+      PERSIST_KEYS.forEach(k => s[k] = $(k).value);
+      s.engine = document.querySelector('input[name="engine"]:checked').value;
+      s.sparring = $('qs-sparring').checked;
+      localStorage.setItem('almachess-tournament', JSON.stringify(s));
+    }
+
+    // ---- engine toggle ----
+    function refreshEngineUi() {
+      const isSf = document.querySelector('input[name="engine"]:checked').value === 'stockfish';
+      $('cfg-stockfish').hidden = !isSf;
+      $('cfg-integrated').hidden = isSf;
+      if (isSf) probeAi();
+    }
+    document.querySelectorAll('input[name="engine"]').forEach(r => {
+      r.addEventListener('change', () => { refreshEngineUi(); save(); });
+    });
+
+    // ---- live slider labels ----
+    [['cfg-int-depth','cfg-int-depth-val'], ['cfg-sf-depth','cfg-sf-depth-val'],
+     ['cfg-sf-skill','cfg-sf-skill-val']].forEach(([id, vid]) => {
+      $(id).addEventListener('input', () => { $(vid).textContent = $(id).value; save(); });
+    });
+    $('qs-clock').addEventListener('input', () => {
+      $('qs-clock-val').textContent = $('qs-clock').value + 's'; save();
+    });
+    PERSIST_KEYS.forEach(k => $(k).addEventListener('change', save));
+    $('qs-sparring').addEventListener('change', save);
+
+    // ---- AiService availability probe (every 8s when Stockfish selected) ----
+    let aiProbeTimer = null;
+    async function probeAi() {
+      const url = $('cfg-ai-url').value.trim().replace(/\/$/, '');
+      if (!url) return;
+      const dot = $('ai-status-dot');
+      // We can't reach ai-service:* directly from browser if it's only Docker DNS.
+      // Best-effort: ask our API to proxy a check. If our API has no proxy yet,
+      // fall back to a CORS-aware direct probe.
+      try {
+        const r = await fetch(url + '/health', { method: 'GET', mode: 'cors',
+                                                 signal: AbortSignal.timeout(2500) });
+        if (r.ok) { dot.className = 'ai-status ok'; dot.title = 'erreichbar'; return; }
+      } catch (_) {}
+      // CORS or DNS fail — but server can still reach it. Mark unknown.
+      dot.className = 'ai-status';
+      dot.title = 'Browser kann nicht prüfen — Server-Sicht entscheidet';
+    }
+    $('cfg-ai-url').addEventListener('change', probeAi);
+    function startAiPolling() { if (aiProbeTimer) return; aiProbeTimer = setInterval(probeAi, 8000); }
+    startAiPolling();
+
+    // ---- log rendering ----
+    const logbox = $('logbox');
+    let autoScroll = true;
+    function appendLog(kind, line) {
+      const div = document.createElement('div');
+      div.className = 'l ' + (kind || '');
+      div.textContent = line;
+      logbox.appendChild(div);
+      if (autoScroll) logbox.scrollTop = logbox.scrollHeight;
+    }
+    function classifyLine(line) {
+      if (/gameEnd|tournamentFinished|aborted|fail|rejected|Error/i.test(line)) return 'error';
+      if (/gameStart|tournamentStarted|roundStarted/i.test(line)) return 'game';
+      if (/->/.test(line)) return 'move';
+      if (/heartbeat|subscribing|asking engine|engine returned/i.test(line)) return 'dim';
+      return '';
+    }
+    $('btn-pause').addEventListener('click', () => {
+      autoScroll = !autoScroll;
+      $('btn-pause').textContent = autoScroll ? '⏸ folgen' : '▶ pausiert';
+    });
+    $('btn-clear').addEventListener('click', () => { logbox.innerHTML = ''; });
+
+    // ---- status rendering ----
+    function setStatus(s) {
+      const phase = (s.phase || 'Idle');
+      const badge = $('status-badge');
+      badge.className = 'badge ' + phase.toLowerCase();
+      badge.innerHTML = '<span class="dot"></span>' + phase;
+      $('status-msg').textContent = s.message || '';
+      if (s.tournamentId) {
+        $('meta-tid').textContent = 'TID:' + s.tournamentId;
+        $('meta-tid').hidden = false;
+      } else $('meta-tid').hidden = true;
+      if (s.botId) {
+        $('meta-bot').textContent = 'Bot:' + s.botId;
+        $('meta-bot').hidden = false;
+      } else $('meta-bot').hidden = true;
+      const running = ['Connecting','Joined','Playing'].includes(phase);
+      $('btn-quickstart').disabled = running;
+      $('btn-join').disabled = running;
+      $('btn-stop').disabled = !running;
+      if (phase === 'Finished' && s.tournamentId) showResultStrip(s);
+      if (phase === 'Idle' || phase === 'Error') $('result-strip').style.display = 'none';
+    }
+
+    async function showResultStrip(s) {
+      const strip = $('result-strip');
+      try {
+        const r = await fetch($('cfg-base').value.trim().replace(/\/$/, '')
+                              + '/api/tournament/' + s.tournamentId);
+        const j = await r.json();
+        const me = j.standing?.players?.find(p => p.bot.name === $('cfg-botname').value.trim());
+        if (!me) { strip.style.display = 'none'; return; }
+        const won = me.wins > me.losses;
+        const drawn = me.wins === me.losses;
+        strip.className = 'result-strip ' + (won ? 'win' : drawn ? 'draw' : 'loss');
+        strip.style.display = 'block';
+        strip.textContent = (won ? '✅ Gewonnen' : drawn ? '➖ Unentschieden' : '❌ Verloren')
+          + `  ·  ${me.wins}W / ${me.draws}D / ${me.losses}L  ·  ${me.points} Pkt`;
+      } catch (e) { strip.style.display = 'none'; }
+    }
+
+    // ---- SSE subscription ----
+    function openStream() {
+      const es = new EventSource(api('/api/tournament/log/stream'));
+      es.addEventListener('log',    (e) => appendLog(classifyLine(e.data), e.data));
+      es.addEventListener('status', (e) => { try { setStatus(JSON.parse(e.data)); } catch (_) {} });
+      es.onerror = () => appendLog('error', '[ui] log-stream unterbrochen, reconnect...');
+    }
+
+    // ---- list tournaments (advanced) ----
+    $('btn-list').addEventListener('click', async () => {
+      const base = $('cfg-base').value.trim().replace(/\/$/, '');
+      $('btn-list').disabled = true; $('btn-list').textContent = 'lade...';
+      try {
+        const r = await fetch(base + '/api/tournament');
+        const j = await r.json();
+        const opts = [];
+        const push = (g, t) => opts.push(`<option value="${t.id}">[${g}] ${t.fullName || t.name || t.id} — ${t.id}</option>`);
+        (j.created || []).forEach(t => push('created', t));
+        (j.started || []).forEach(t => push('started', t));
+        const sel = $('cfg-tid-select');
+        sel.innerHTML = '<option value="">(wähle ein Turnier)</option>' + opts.join('');
+        sel.hidden = false;
+        sel.onchange = () => { $('cfg-tid').value = sel.value; save(); };
+      } catch (e) {
+        appendLog('error', '[ui] list fehlgeschlagen: ' + e.message);
+      } finally {
+        $('btn-list').disabled = false; $('btn-list').textContent = 'Verfügbare Turniere laden';
+      }
+    });
+
+    // ---- common request builder ----
+    function buildEngineFields() {
+      const engine = document.querySelector('input[name="engine"]:checked').value;
+      const movetime = engine === 'stockfish' && $('cfg-sf-movetime').value
+        ? parseInt($('cfg-sf-movetime').value, 10) : null;
+      return {
+        engine,
+        depth: engine === 'integrated'
+          ? parseInt($('cfg-int-depth').value, 10)
+          : parseInt($('cfg-sf-depth').value, 10),
+        movetimeMs: movetime,
+        skill: engine === 'stockfish' ? parseInt($('cfg-sf-skill').value, 10) : null,
+        aiServiceUrl: engine === 'stockfish' ? $('cfg-ai-url').value.trim() : null
+      };
+    }
+
+    // ---- start: join existing tournament ----
+    $('btn-join').addEventListener('click', async () => {
+      const e = buildEngineFields();
+      const body = Object.assign({
+        tournamentBaseUrl: $('cfg-base').value.trim().replace(/\/$/, ''),
+        tournamentId: $('cfg-tid').value.trim() || null,
+        botName: $('cfg-botname').value.trim()
+      }, e);
+      try {
+        const r = await fetch(api('/api/tournament/start'), {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body)
+        });
+        const j = await r.json();
+        if (!r.ok) appendLog('error', '[ui] join: ' + (j.error || r.status));
+      } catch (ex) { appendLog('error', '[ui] join exception: ' + ex.message); }
+    });
+
+    // ---- quickstart: self-contained test ----
+    $('btn-quickstart').addEventListener('click', async () => {
+      const e = buildEngineFields();
+      const body = Object.assign({
+        tournamentBaseUrl: $('cfg-base').value.trim().replace(/\/$/, ''),
+        tournamentName: 'alma-selftest-' + Date.now().toString(36),
+        nbRounds: 1,
+        clockLimit: parseInt($('qs-clock').value, 10),
+        botName: $('cfg-botname').value.trim(),
+        withSparring: $('qs-sparring').checked
+      }, e);
+      $('btn-quickstart').disabled = true;
+      logbox.innerHTML = '';  // fresh log for fresh run
+      $('result-strip').style.display = 'none';
+      try {
+        const r = await fetch(api('/api/tournament/quickstart'), {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body)
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          appendLog('error', '[ui] quickstart: ' + (j.error || r.status));
+          $('btn-quickstart').disabled = false;
+        } else {
+          appendLog('game', '[ui] Selbst-Test gestartet · TID=' + j.tournamentId);
+        }
+      } catch (ex) {
+        appendLog('error', '[ui] quickstart exception: ' + ex.message);
+        $('btn-quickstart').disabled = false;
+      }
+    });
+
+    $('btn-stop').addEventListener('click', async () => {
+      try { await fetch(api('/api/tournament/stop'), {method:'POST'}); }
+      catch (ex) { appendLog('error', '[ui] stop exception: ' + ex.message); }
+    });
+
+    // ---- bootstrap ----
+    load();
+    refreshEngineUi();
+    $('cfg-sf-depth-val').textContent = $('cfg-sf-depth').value;
+    $('cfg-sf-skill-val').textContent = $('cfg-sf-skill').value;
+    $('cfg-int-depth-val').textContent = $('cfg-int-depth').value;
+    $('qs-clock-val').textContent = $('qs-clock').value + 's';
+    fetch(api('/api/tournament/status')).then(r => r.json()).then(setStatus).catch(() => {});
+    openStream();
+  </script>
+</body>
+</html>

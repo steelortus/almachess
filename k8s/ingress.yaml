@@ -1,0 +1,32 @@
+# Ingress for the web tier. Works out of the box with k3d's bundled Traefik.
+# With the k3d cluster from k8s/README.md (host-port 8088 -> 80), the app is
+# reachable at:
+#   http://almachess.localhost:8088
+# *.localhost resolves to 127.0.0.1 on modern OSes; if not, add an entry to
+# your hosts file or just use http://localhost:8088 with the path-based rule.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: almachess
+  namespace: almachess
+spec:
+  rules:
+    - host: almachess.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80

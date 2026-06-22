@@ -5,7 +5,25 @@
       "Bash(cmd /c \"cd /d \\\\\"c:\\\\Users\\\\leo11\\\\OneDrive\\\\Desktop\\\\HTWG\\\\AIN\\\\Semester6\\\\SoftwareArchitektur\\\\almachess\\\\\" && sbt compile 2>&1\")",
       "Bash(cmd /c \"cd /d \\\\\"c:\\\\Users\\\\leo11\\\\OneDrive\\\\Desktop\\\\HTWG\\\\AIN\\\\Semester6\\\\SoftwareArchitektur\\\\almachess\\\\\" && sbt compile\")",
       "PowerShell(sbt -warn compile 2>&1)",
-      "PowerShell(sbt compile 2>&1)"
+      "PowerShell(sbt compile 2>&1)",
+      "PowerShell($out=\\(Resolve-Path \"perf\\\\results\"\\).Path; sbt -batch \"`\"bench/Jmh/run -rf json -rff $out/jmh-optimized.json -o $out/jmh-optimized.txt`\"\" 2>&1 | Select-Object -Last 30)",
+      "PowerShell(docker run --rm grafana/k6 version 2>&1)",
+      "PowerShell($perfPath = \\(Resolve-Path \"perf\"\\).Path; docker run --rm -v \"${perfPath}:/perf\" -e \"BASE_URL=http://host.docker.internal:8084\" -e \"K6_VUS=30\" -e \"K6_DURATION=30s\" grafana/k6 run --summary-export=/perf/results/k6-baseline.json /perf/k6/notation_validate.js 2>&1 | Tee-Object -FilePath \"perf/results/k6-baseline.txt\" | Select-Object -Last 60)",
+      "PowerShell(docker compose up -d --force-recreate notation-service 2>&1)",
+      "Bash(curl -fsS -X POST http://localhost:8084/notation/fen/validate -H 'Content-Type: application/json' -d '{\"fen\":\"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\"}')",
+      "PowerShell($perfPath = \\(Resolve-Path \"perf\"\\).Path; docker run --rm -v \"${perfPath}:/perf\" -e \"BASE_URL=http://host.docker.internal:8084\" -e \"K6_VUS=30\" -e \"K6_DURATION=30s\" grafana/k6 run --summary-export=/perf/results/k6-optimized.json /perf/k6/notation_validate.js 2>&1 | Tee-Object -FilePath \"perf/results/k6-optimized.txt\" | Select-Object -Last 35)",
+      "PowerShell($perfPath = \\(Resolve-Path \"perf\"\\).Path; Write-Host \"--- warmup ---\"; docker run --rm -v \"${perfPath}:/perf\" -e \"BASE_URL=http://host.docker.internal:8084\" -e \"K6_VUS=30\" -e \"K6_DURATION=45s\" grafana/k6 run --quiet --no-summary /perf/k6/notation_validate.js 2>&1 | Select-Object -Last 4; Write-Host \"--- measurement ---\"; docker run --rm -v \"${perfPath}:/perf\" -e \"BASE_URL=http://host.docker.internal:8084\" -e \"K6_VUS=30\" -e \"K6_DURATION=30s\" grafana/k6 run --summary-export=/perf/results/k6-optimized.json /perf/k6/notation_validate.js 2>&1 | Tee-Object -FilePath \"perf/results/k6-optimized.txt\" | Select-Object -Last 25)",
+      "PowerShell(sbt -batch '\"gatlingTests/Test/compile\"' 2>&1)",
+      "Bash(curl -fsS http://localhost:8083/api/persistence/status)",
+      "Bash(docker exec *)",
+      "PowerShell(Get-Process \"Docker Desktop\" -ErrorAction SilentlyContinue)",
+      "Bash(docker info *)",
+      "PowerShell(docker compose up -d 2>&1)",
+      "Bash(node --check web/html/app.js)",
+      "Bash(sbt --client compile)",
+      "Bash(node --check \"c:/Users/leo11/OneDrive/Desktop/HTWG/AIN/Semester6/SoftwareArchitektur/almachess/web/html/app.js\")",
+      "PowerShell(sbt \"testOnly de.htwg.softwarearchitecture.almachess.parser.PgnParserSpec de.htwg.softwarearchitecture.almachess.model.SanSpec\" 2>&1)",
+      "PowerShell(sbt \"testOnly de.htwg.softwarearchitecture.almachess.model.GameStateSpec\" 2>&1)"
     ]
   }
 }

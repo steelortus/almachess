@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(sbt -batch -Dsbt.color=false \"bench/Jmh/compile\" 2>&1)",
+      "PowerShell(sbt -batch '\"bench/Jmh/compile\"' 2>&1)"
+    ]
+  }
+}

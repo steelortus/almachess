@@ -9,8 +9,17 @@ services:
       MAIN_CLASS: de.htwg.softwarearchitecture.almachess.services.NotationService
       NOTATION_HOST: 0.0.0.0
       NOTATION_PORT: "8084"
+      # When set, NotationService spins up an Alpakka Kafka consumer on
+      # `almachess.moves` and re-broadcasts via SSE /notation/events/stream.
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_MOVES_TOPIC: almachess.moves
+      KAFKA_CONSUMER_GROUP: notation-service
+      AKKA_LICENSE_KEY: ${AKKA_LICENSE_KEY:-}
     ports:
       - "8084:8084"
+    depends_on:
+      kafka:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8084/health"]
       interval: 5s
@@ -30,6 +39,7 @@ services:
       AI_PORT: "8082"
       AI_ENGINE: ${AI_ENGINE:-stockfish}
       STOCKFISH_PATH: ${STOCKFISH_PATH:-/usr/games/stockfish}
+      AKKA_LICENSE_KEY: ${AKKA_LICENSE_KEY:-}
     ports:
       - "8082:8082"
     healthcheck:
@@ -72,6 +82,38 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Single-broker Kafka in KRaft mode (no Zookeeper). Topic `almachess.moves`
+  # is auto-created on first publish. The Main-API publishes every move,
+  # NotationService consumes the topic and re-broadcasts via SSE.
+  kafka:
+    # bitnamilegacy: Broadcom removed the bitnami/* images from Docker Hub in
+    # 2025; the legacy org hosts the identical images (same env-var scheme).
+    image: bitnamilegacy/kafka:3.7
+    container_name: almachess-kafka
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      # EXTERNAL listener: host clients (e.g. the Spark analytics job) reach
+      # the broker via localhost:9094. PLAINTEXT advertises `kafka:9092`,
+      # which only resolves inside the compose network.
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
   mongo:
     image: mongo:7
     container_name: almachess-mongo
@@ -112,6 +154,15 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_TTL_SECONDS: "1800"
+      # Lichess integration — empty by default. Set in .env (gitignored) or
+      # export in the shell before `docker compose up` to enable.
+      LICHESS_BASE_URL: ${LICHESS_BASE_URL:-https://lichess.org}
+      LICHESS_BOARD_TOKEN: ${LICHESS_BOARD_TOKEN:-}
+      LICHESS_BOT_TOKEN: ${LICHESS_BOT_TOKEN:-}
+      # When set, the Main-API publishes every successful move to Kafka.
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_MOVES_TOPIC: almachess.moves
+      AKKA_LICENSE_KEY: ${AKKA_LICENSE_KEY:-}
     ports:
       - "8083:8083"
     depends_on:
@@ -125,6 +176,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8083/health"]
       interval: 5s
@@ -134,11 +187,10 @@ services:
     restart: unless-stopped
 
   web:
-    image: nginx:alpine
+    build:
+      context: ./web
+    image: almachess-web:latest
     container_name: almachess-web
-    volumes:
-      - ./web/html:/usr/share/nginx/html:ro
-      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8079:80"
     depends_on:

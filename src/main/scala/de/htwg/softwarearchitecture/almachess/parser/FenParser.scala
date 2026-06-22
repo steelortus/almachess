@@ -2,39 +2,86 @@ package de.htwg.softwarearchitecture.almachess.parser
 
 import de.htwg.softwarearchitecture.almachess.model.*
 
+import scala.collection.immutable.VectorBuilder
+
 object FenParser:
+
+  // 128-entry lookup table for FEN piece chars. Index by char code for O(1)
+  // dispatch and reuse the same Some(Piece) instance per char (no per-call alloc).
+  private val pieceLookup: Array[Option[Piece]] =
+    val arr = Array.fill[Option[Piece]](128)(None)
+    for c <- "KQRBNPkqrbnp" do arr(c.toInt) = Piece.fromFenChar(c)
+    arr
+
+  private val emptySquare: Option[Piece] = None
+
   def parse(fen: String): Either[String, GameState] =
     val parts = fen.trim.split("\\s+")
     if parts.length != 6 then Left("FEN must contain 6 fields")
     else
-      for
-        board <- parseBoard(parts(0))
-        turn <- parseTurn(parts(1))
-        rights <- parseCastleRights(parts(2))
-        ep <- parseEnPassant(parts(3))
-        half <- parts(4).toIntOption.toRight("invalid halfmove clock")
-        full <- parts(5).toIntOption.toRight("invalid fullmove number")
-      yield GameState(board, turn, rights, ep, half, full, s"${turn} to move")
+      parseBoard(parts(0)) match
+        case Left(err) => Left(err)
+        case Right(board) =>
+          parseTurn(parts(1)) match
+            case Left(err) => Left(err)
+            case Right(turn) =>
+              parseCastleRights(parts(2)) match
+                case Left(err) => Left(err)
+                case Right(rights) =>
+                  parseEnPassant(parts(3)) match
+                    case Left(err) => Left(err)
+                    case Right(ep) =>
+                      parts(4).toIntOption match
+                        case None => Left("invalid halfmove clock")
+                        case Some(half) =>
+                          parts(5).toIntOption match
+                            case None => Left("invalid fullmove number")
+                            case Some(full) =>
+                              Right(GameState(board, turn, rights, ep, half, full, s"${turn} to move"))
 
   private def parseBoard(placement: String): Either[String, Board] =
     val rows = placement.split("/")
     if rows.length != 8 then Left("board placement must have 8 ranks")
     else
-      val parsedRows = rows.toVector.reverse.map(parseRank)
-      if parsedRows.exists(_.isLeft) then parsedRows.collectFirst { case Left(err) => Left(err) }.get
-      else Right(Board(parsedRows.collect { case Right(row) => row }))
+      // FEN ranks are top-down (rank 8 first), Board.squares is bottom-up
+      // (index 0 == rank 1). Fill the array in reverse to match Board.initial.
+      val ranks = new Array[Vector[Option[Piece]]](8)
+      var i = 0
+      var err: String = null
+      while i < 8 && err == null do
+        parseRank(rows(i)) match
+          case Left(e)    => err = e
+          case Right(row) => ranks(7 - i) = row
+        i += 1
+      if err != null then Left(err)
+      else Right(Board(ranks.toVector))
 
   private def parseRank(rank: String): Either[String, Vector[Option[Piece]]] =
-    rank.foldLeft[Either[String, Vector[Option[Piece]]]](Right(Vector.empty)) {
-      case (Left(err), _) => Left(err)
-      case (Right(acc), c) if c.isDigit =>
-        val n = c.asDigit
-        Right(acc ++ Vector.fill(n)(None))
-      case (Right(acc), c) =>
-        Piece.fromFenChar(c).toRight(s"invalid FEN piece: $c").map(p => acc :+ Some(p))
-    }.flatMap { row =>
-      Either.cond(row.length == 8, row, s"rank '$rank' does not have length 8")
-    }
+    val builder = new VectorBuilder[Option[Piece]]
+    builder.sizeHint(8)
+    var count = 0
+    var i = 0
+    var err: String = null
+    val len = rank.length
+    while i < len && err == null do
+      val c = rank.charAt(i)
+      if c >= '1' && c <= '8' then
+        val n = c - '0'
+        var k = 0
+        while k < n do
+          builder += emptySquare
+          k += 1
+        count += n
+      else
+        val p = if c.toInt < 128 then pieceLookup(c.toInt) else emptySquare
+        if p.isEmpty then err = s"invalid FEN piece: $c"
+        else
+          builder += p
+          count += 1
+      i += 1
+    if err != null then Left(err)
+    else if count != 8 then Left(s"rank '$rank' does not have length 8")
+    else Right(builder.result())
 
   private def parseTurn(s: String): Either[String, Color] = s match
     case "w" => Right(Color.White)

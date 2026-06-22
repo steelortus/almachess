@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>AlmaChess – Artillery Stresstest</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      color: #1f2937;
+      line-height: 1.55;
+    }
+    h1 { font-size: 1.9rem; margin-bottom: 0.2rem; }
+    h2 { font-size: 1.35rem; margin-top: 2.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.4rem; }
+    h3 { font-size: 1.05rem; margin-top: 1.6rem; color: #374151; }
+    .subtitle { color: #6b7280; margin-top: 0; }
+    .tldr {
+      background: #fee2e2;
+      border-left: 4px solid #dc2626;
+      padding: 0.9rem 1.2rem;
+      margin: 1.5rem 0;
+      border-radius: 4px;
+    }
+    .tldr strong { color: #991b1b; }
+    .chart-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1.2rem 1.4rem;
+      margin: 1rem 0 2rem;
+    }
+    .chart-card p {
+      margin: 0 0 0.9rem 0;
+      color: #4b5563;
+      font-size: 0.95rem;
+    }
+    canvas { max-height: 380px; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.92rem;
+      margin: 0.5rem 0 1rem;
+    }
+    th, td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    th { background: #f3f4f6; font-weight: 600; }
+    .ok    { color: #059669; font-weight: 600; }
+    .warn  { color: #d97706; font-weight: 600; }
+    .fail  { color: #dc2626; font-weight: 600; }
+    code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+    .footnote { font-size: 0.85rem; color: #6b7280; margin-top: 1rem; }
+    .nav { font-size: 0.95rem; color: #4b5563; margin-bottom: 0.5rem; }
+    .nav a { color: #2563eb; text-decoration: none; }
+    .nav a:hover { text-decoration: underline; }
+    .callout {
+      background: #eff6ff;
+      border-left: 4px solid #2563eb;
+      padding: 0.8rem 1.1rem;
+      margin: 1rem 0;
+      font-size: 0.93rem;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<p class="nav">
+  Reports: <a href="fen-report.html">FenParser</a> ·
+  <a href="mongo-report.html">Mongo</a> ·
+  <a href="stress-report.html">Stresstest (k6)</a> ·
+  <a href="artillery-report.html"><strong>Stresstest (Artillery)</strong></a>
+</p>
+
+<h1>AlmaChess – Stresstest mit Artillery</h1>
+<p class="subtitle">Open-Loop-Belastung: feste Ankunftsrate pro Sekunde, Server kann nicht aufholen.</p>
+
+<div class="tldr">
+  <strong>Kurzfassung:</strong> Bei 30 Anfragen/Sekunde läuft alles glatt.
+  Bei <strong>75 Anfragen/Sekunde</strong> reißen 22 % der Anfragen ins
+  10-Sekunden-Timeout. Ab 150/s sind über die Hälfte verloren, bei 500/s
+  schaffen nur noch 11 % eine Antwort. Artillery deckt damit eine <strong>härtere
+  Grenze</strong> auf als der k6-Stresstest – siehe Vergleich am Ende.
+</div>
+
+<h2>1. Anfragen, erfolgreiche Antworten und Timeouts pro Phase</h2>
+
+<div class="chart-card">
+  <p>Pro 30-Sekunden-Phase: graue Säule = wieviele Anfragen Artillery losgeschickt
+     hat, grüne = wieviele 200er zurückkamen, rote = wieviele im Timeout
+     verschwanden. Ab 75/s öffnet sich die Schere.</p>
+  <canvas id="phaseStackedChart"></canvas>
+</div>
+
+<h2>2. Fehlerrate pro Phase</h2>
+
+<div class="chart-card">
+  <p>Anteil der Anfragen, die im Timeout liefen. Rote Linie = Knee-Point (75/s).</p>
+  <canvas id="errorRateChart"></canvas>
+</div>
+
+<h2>3. Latenz-Verlauf über die gesamte Laufzeit</h2>
+
+<div class="chart-card">
+  <p>p50 / p95 / p99 in 10-Sekunden-Fenstern. Bis Sekunde 60 vollkommen flach,
+     dann <strong>sprunghafter Anstieg</strong>. Senkrechte Linien markieren
+     Phasenwechsel.</p>
+  <canvas id="latencyChart"></canvas>
+</div>
+
+<h2>4. Ankunftsrate vs. tatsächlicher Antwortrate</h2>
+
+<div class="chart-card">
+  <p>So sieht Sättigung aus: orange = was Artillery reinpumpt, lila = was der
+     Server ausspuckt. Ab 75/s wächst die Lücke jede Phase weiter.</p>
+  <canvas id="rateComparisonChart"></canvas>
+</div>
+
+<h2>5. Pro-Phase Tabelle</h2>
+
+<div class="chart-card">
+  <table>
+    <thead><tr>
+      <th>Phase</th><th>Ankunftsrate</th><th>Anfragen</th><th>200er</th>
+      <th>Timeouts</th><th>Fehlerrate</th><th>p95-Latenz</th><th>Bewertung</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>WARM</td><td>10/s</td><td>840</td><td>840</td><td>0</td><td>0,0 %</td><td>97 ms</td><td class="ok">gesund</td></tr>
+      <tr><td>L030</td><td>30/s</td><td>2 588</td><td>2 587</td><td>0</td><td>0,0 %</td><td>24 ms</td><td class="ok">gesund</td></tr>
+      <tr><td>L075</td><td>75/s</td><td>4 021</td><td>2 734</td><td>867</td><td>21,6 %</td><td>1 863 ms</td><td class="fail">Knee-Point</td></tr>
+      <tr><td>L150</td><td>150/s</td><td>5 831</td><td>2 197</td><td>2 984</td><td>51,2 %</td><td>2 369 ms</td><td class="fail">überlastet</td></tr>
+      <tr><td>L300</td><td>300/s</td><td>9 646</td><td>1 388</td><td>5 203</td><td>53,9 %</td><td>4 676 ms</td><td class="fail">tot</td></tr>
+      <tr><td>L500</td><td>500/s</td><td>15 847</td><td>1 797</td><td>14 240</td><td>89,8 %</td><td>3 012 ms</td><td class="fail">tot</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>6. Artillery vs k6 – warum sind die Zahlen so unterschiedlich?</h2>
+
+<div class="chart-card">
+  <p>Beide Tools fahren dieselbe API gegen dieselben Daten. Trotzdem fällt der
+     Knee-Point bei Artillery viel früher. Der Unterschied liegt im Lastmodell:</p>
+
+  <div class="callout">
+    <strong>Closed-Loop (k6):</strong> <em>N Worker</em>, jeder wartet auf
+    seine eigene Antwort, bevor er die nächste schickt. Wird der Server langsam,
+    schicken alle <em>seltener</em>. Tatsächliche Last ≤ Server-Kapazität.<br><br>
+    <strong>Open-Loop (Artillery):</strong> <em>N neue Anfragen pro Sekunde</em>
+    – unabhängig davon, ob der Server bereit ist. Wird der Server langsam,
+    stauen sich Anfragen, bis es ins Timeout läuft. Tatsächliche Last = was
+    ausgemacht wurde.
+  </div>
+
+  <p>Beide Sichten sind richtig, aber sie messen Verschiedenes:</p>
+  <ul>
+    <li><strong>k6</strong> beantwortet: „Wie viele dauerhaft verbundene Clients
+        kann ich bedienen?" → 75 gehen gut, 150 brechen.</li>
+    <li><strong>Artillery</strong> beantwortet: „Wie viele Anfragen pro Sekunde
+        verkraftet der Server, ohne dass Anfragen verloren gehen?" → 30/s sind
+        sicher, ab 75/s gehen welche verloren.</li>
+  </ul>
+  <p>Für Production-Capacity-Planung ist <strong>Artillerys Antwort die
+     ehrlichere</strong>: echte Nutzer warten nicht, sie laden die Seite neu
+     oder gehen weg.</p>
+
+  <canvas id="comparisonChart"></canvas>
+</div>
+
+<h2>7. Reproduktion</h2>
+
+<div class="chart-card">
+  <p>Voraussetzung: Stack läuft (<code>docker compose up -d</code>) und Mongo
+     ist mit 10 k Spielen geseedet.</p>
+  <pre style="background:#1f2937;color:#e5e7eb;padding:1rem;border-radius:4px;font-size:0.85rem;overflow-x:auto;">
+$perfArt = (Resolve-Path "perf\artillery").Path
+$perfRes = (Resolve-Path "perf\results").Path
+docker run --rm `
+  -v "${perfArt}:/scripts" -v "${perfRes}:/out" `
+  artilleryio/artillery:latest run `
+  --output /out/artillery-stress.json `
+  /scripts/persistence_stress.yml</pre>
+  <p>Laufzeit: ~3 Minuten. Erzeugt
+     <code>perf/results/artillery-stress.json</code> und
+     <code>artillery-stress.txt</code>.</p>
+</div>
+
+<p class="footnote">
+  Skript: <code>perf/artillery/persistence_stress.yml</code> +
+  <code>stress_helpers.js</code>. Rohdaten:
+  <code>perf/results/artillery-stress.{txt,json}</code>.
+</p>
+
+<script>
+// ---- Pro-Phase Aggregate ----------------------------------------------------
+
+const phases       = ['WARM (10/s)', 'L030 (30/s)', 'L075 (75/s)', 'L150 (150/s)', 'L300 (300/s)', 'L500 (500/s)'];
+const arrivalRates = [10, 30, 75, 150, 300, 500];
+const reqsSent     = [  840, 2588, 4021,  5831,  9646, 15847];
+const reqs200      = [  840, 2587, 2734,  2197,  1388,  1797];
+const timeouts     = [    0,    0,  867,  2984,  5203, 14240];
+const errorPct     = [    0,    0, 21.6,  51.2,  53.9,  89.8];
+const p95Phase     = [   97,   24, 1863,  2369,  4676,  3012];
+
+// Effektiver Throughput (Antworten pro Sekunde im 30-s-Fenster)
+const respPerSec   = reqs200.map(n => +(n / 30).toFixed(1));
+
+// ---- Time-Series (10-s-Bins) ------------------------------------------------
+
+const tSec   = [   0,   10,   20,   30,   40,   50,   60,   70,   80,   90,  100,  110,  120,  130,  140,  150,  160,  170,  180];
+const tReqs  = [ 240,  300,  300,  789,  900,  899, 1217, 1410, 1394, 1807, 1983, 2041, 3076, 3272, 3298, 4905, 5503, 5439, 1071];
+const tResp  = [ 240,  300,  300,  789,  900,  898,  773,  992,  969,  663,  724,  810,  533,  384,  471,  547,  587,  663,  298];
+const tTo    = [   0,    0,    0,    0,    0,    0,    0,  449,  418,  447, 1283, 1254, 1254, 2076, 1873, 3982, 5488, 4770, 4709];
+const tP50   = [13.1, 10.1,  8.9,  8.9,  7.9, 10.1,632.8,820.7,854.2,1249.1,1153.1,1064.4,1408.4,2101.1,1790.4,1587.9,1465.9,1224.4, 820.7];
+const tP95   = [96.6, 21.1,   15,   16,   15, 23.8,1863.5,1652.8,1686.1,2369,2322.1,1901.1,3072.4,4676.2,3134.5,2951.9,3011.6,2515.5,2725];
+const tP99   = [179.5,25.8, 19.1, 19.9, 19.9, 34.8,5378.9,2059.5,2101.1,3011.6,2951.9,2231,3534.1,5168,3395.5,3905.8,3605.5,3197.8,2951.9];
+const tArrival = tSec.map(s =>
+  s <  30 ? 10  :
+  s <  60 ? 30  :
+  s <  90 ? 75  :
+  s < 120 ? 150 :
+  s < 150 ? 300 :
+  s < 180 ? 500 : 0);
+const tRespRate = tResp.map(r => +(r/10).toFixed(1));
+
+// ---- Phasen-Linien-Plugin --------------------------------------------------
+
+const phaseLines = {
+  id: 'phaseLines',
+  beforeDraw: chart => {
+    const { ctx, chartArea: a, scales: { x } } = chart;
+    if (!a) return;
+    ctx.save();
+    ctx.strokeStyle = '#9ca3af';
+    ctx.setLineDash([4, 4]);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#6b7280';
+    [
+      { sec:  30, label: 'L030' },
+      { sec:  60, label: 'L075' },
+      { sec:  90, label: 'L150' },
+      { sec: 120, label: 'L300' },
+      { sec: 150, label: 'L500' }
+    ].forEach(({ sec, label }) => {
+      const px = x.getPixelForValue(sec);
+      ctx.beginPath();
+      ctx.moveTo(px, a.top);
+      ctx.lineTo(px, a.bottom);
+      ctx.stroke();
+      ctx.fillText(label, px + 3, a.top + 12);
+    });
+    ctx.restore();
+  }
+};
+
+// ---- Chart 1 : Phase Stacked-Vergleich -------------------------------------
+
+new Chart(document.getElementById('phaseStackedChart'), {
+  type: 'bar',
+  data: {
+    labels: phases,
+    datasets: [
+      { label: 'Anfragen verschickt', data: reqsSent, backgroundColor: '#94a3b8' },
+      { label: '200 OK',              data: reqs200,  backgroundColor: '#10b981' },
+      { label: 'Timeouts',            data: timeouts, backgroundColor: '#dc2626' },
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { title: { display: true, text: 'Anfragen, Erfolge, Timeouts pro Phase' } },
+    scales: { y: { beginAtZero: true, title: { display: true, text: 'Anfragen' } } }
+  }
+});
+
+// ---- Chart 2 : Fehlerrate pro Phase ----------------------------------------
+
+new Chart(document.getElementById('errorRateChart'), {
+  type: 'bar',
+  data: {
+    labels: phases,
+    datasets: [{
+      label: 'Timeout-Rate (%)',
+      data: errorPct,
+      backgroundColor: errorPct.map(e => e === 0 ? '#10b981' : e < 30 ? '#f59e0b' : '#dc2626')
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { title: { display: true, text: 'Anteil im Timeout (%)' }, legend: { display: false } },
+    scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } } }
+  }
+});
+
+// ---- Chart 3 : Latenz-Verlauf ----------------------------------------------
+
+new Chart(document.getElementById('latencyChart'), {
+  type: 'line',
+  data: {
+    labels: tSec,
+    datasets: [
+      { label: 'p50', data: tP50, borderColor: '#3b82f6', backgroundColor: '#3b82f680', tension: 0.2, pointRadius: 2 },
+      { label: 'p95', data: tP95, borderColor: '#f59e0b', backgroundColor: '#f59e0b80', tension: 0.2, pointRadius: 2 },
+      { label: 'p99', data: tP99, borderColor: '#dc2626', backgroundColor: '#dc262680', tension: 0.2, pointRadius: 2 },
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { title: { display: true, text: 'Antwortzeit über Laufzeit (ms, log-Skala)' } },
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'Sekunden seit Teststart' } },
+      y: { type: 'logarithmic', title: { display: true, text: 'ms (log)' } }
+    }
+  },
+  plugins: [phaseLines]
+});
+
+// ---- Chart 4 : Ankunftsrate vs Antwortrate ---------------------------------
+
+new Chart(document.getElementById('rateComparisonChart'), {
+  type: 'line',
+  data: {
+    labels: tSec,
+    datasets: [
+      { label: 'Ankunftsrate (req/s)', data: tArrival,  borderColor: '#f97316', backgroundColor: '#f9731633', fill: true, tension: 0.2, pointRadius: 2 },
+      { label: 'Antwortrate (resp/s)', data: tRespRate, borderColor: '#8b5cf6', backgroundColor: '#8b5cf633', fill: true, tension: 0.2, pointRadius: 2 },
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: { title: { display: true, text: 'Was reinkommt vs. was rausgeht (pro Sekunde)' } },
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'Sekunden seit Teststart' } },
+      y: { beginAtZero: true, title: { display: true, text: 'Anfragen/Sekunde' } }
+    }
+  },
+  plugins: [phaseLines]
+});
+
+// ---- Chart 5 : Artillery vs k6 Vergleich -----------------------------------
+
+new Chart(document.getElementById('comparisonChart'), {
+  type: 'bar',
+  data: {
+    labels: ['Stufe 1', 'Stufe 2', 'Stufe 3 (Knee-Bereich)', 'Stufe 4', 'Stufe 5'],
+    datasets: [
+      // k6: 30 VUs, 75 VUs, 150 VUs (Knee), 300 VUs, 500 VUs   -> error %
+      { label: 'k6 (closed-loop) Fehlerrate %', data: [0, 0, 4.95, 17.69, 25.77], backgroundColor: '#60a5fa' },
+      // Artillery: 30/s, 75/s, 150/s, 300/s, 500/s -> error %
+      { label: 'Artillery (open-loop) Fehlerrate %', data: [0, 21.6, 51.2, 53.9, 89.8], backgroundColor: '#dc2626' },
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      title: { display: true, text: 'Fehlerrate: closed-loop vs open-loop bei gleichem N' },
+      tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} %` } }
+    },
+    scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } } }
+  }
+});
+</script>
+</body>
+</html>

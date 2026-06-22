@@ -3,9 +3,11 @@ package de.htwg.softwarearchitecture.almachess.api
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.Http
-import de.htwg.softwarearchitecture.almachess.clients.{AiClient, NotationClient}
+import de.htwg.softwarearchitecture.almachess.clients.{AiClient, LichessClient, LichessConfig, NotationClient}
 import de.htwg.softwarearchitecture.almachess.control.Controller
+import de.htwg.softwarearchitecture.almachess.messaging.{KafkaConfig, MoveEventProducer}
 import de.htwg.softwarearchitecture.almachess.persistence.{GameRepository, LiveGameStore, MongoGameRepository, PostgresGameRepository, RedisLiveGameStore}
+import de.htwg.softwarearchitecture.almachess.tournament.TournamentManager
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -32,7 +34,30 @@ object Server:
       case Some(url) => println(s"Notation client → remote $url"); new NotationClient.Http(url)
       case None      => println("Notation client → local");        new NotationClient.Local(ec)
 
-    val routes = new Routes(controller, aiClient, notationClient, repository, liveStore)
+    val lichessClient: Option[LichessClient] =
+      val cfg = LichessConfig.fromEnv()
+      if !cfg.enabled then
+        println("Lichess integration disabled (LICHESS_BOARD_TOKEN / LICHESS_BOT_TOKEN not set)")
+        None
+      else
+        val flags = List(
+          Option.when(cfg.boardToken.isDefined)("board-token"),
+          Option.when(cfg.botToken.isDefined)("bot-token")
+        ).flatten.mkString(", ")
+        println(s"Lichess integration enabled (${cfg.baseUrl}; $flags)")
+        Some(new LichessClient(cfg))
+
+    val kafkaConfig = KafkaConfig.fromEnv(defaultGroup = "almachess-api")
+    val moveProducer: MoveEventProducer =
+      if kafkaConfig.enabled then
+        println(s"Kafka producer → ${kafkaConfig.bootstrap} (topic=${kafkaConfig.movesTopic})")
+        MoveEventProducer(kafkaConfig)
+      else
+        println("Kafka disabled (KAFKA_BOOTSTRAP not set)")
+        MoveEventProducer.Disabled
+
+    val tournamentManager = new TournamentManager()
+    val routes = new Routes(controller, aiClient, notationClient, repository, liveStore, lichessClient, moveProducer, Some(tournamentManager))
     val binding = Http().newServerAt(host, port).bind(routes.all)
     binding.onComplete {
       case Success(b) =>

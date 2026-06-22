@@ -1,0 +1,9 @@
+# Optional dev override — copy to docker-compose.override.yml to use.
+# Mounts the web sources live into the running nginx container so changes
+# to web/html or web/nginx.conf are visible without rebuilding the image.
+# Compose auto-loads docker-compose.override.yml on every `docker compose up`.
+services:
+  web:
+    volumes:
+      - ./web/html:/usr/share/nginx/html:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro

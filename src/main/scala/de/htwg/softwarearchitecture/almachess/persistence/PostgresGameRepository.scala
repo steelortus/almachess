@@ -1,5 +1,7 @@
 package de.htwg.softwarearchitecture.almachess.persistence
 
+import akka.NotUsed
+import akka.stream.scaladsl.Source
 import slick.jdbc.PostgresProfile.api.*
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -125,6 +127,20 @@ final class PostgresGameRepository(
 
   override def delete(gameId: String): Future[Unit] =
     db.run(games.filter(_.id === gameId).delete).map(_ => ())
+
+  // Cursor-based reactive stream: Slick's db.stream returns a
+  // DatabasePublisher[String] (Reactive-Streams Publisher). Source.fromPublisher
+  // bridges it into Akka Streams, so downstream backpressure flows back to the
+  // JDBC cursor — long move lists never have to be fully buffered in memory.
+  override def streamMoves(gameId: String)(using ec: ExecutionContext): Source[String, NotUsed] =
+    val action = moves
+      .filter(_.gameId === gameId)
+      .sortBy(_.moveIndex)
+      .map(_.uci)
+      .result
+      .withStatementParameters(fetchSize = 64)
+      .transactionally
+    Source.fromPublisher(db.stream(action))
 
   override def list(): Future[List[GameListEntry]] =
     db.run(games.sortBy(_.savedAt.desc).map(g => (g.id, g.savedAt)).result)

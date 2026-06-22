@@ -11,6 +11,7 @@ import java.nio.file.Files
 import javax.swing.{BorderFactory, JFileChooser, SwingWorker, UIManager}
 import javax.swing.filechooser.FileNameExtensionFilter
 import javax.swing.plaf.ColorUIResource
+// $COVERAGE-OFF$
 
 class Gui(controller: Controller) extends MainFrame:
 
@@ -536,3 +537,4 @@ class Gui(controller: Controller) extends MainFrame:
       else if status == "stalemate"     then "Patt."
       else status
     Dialog.showMessage(parent = this, message = text, title = "Spiel beendet", messageType = Message.Info)
+// $COVERAGE-ON$

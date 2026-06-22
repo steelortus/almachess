@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>AlmaChess – Mongo Persistence Performance</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      color: #1f2937;
+      line-height: 1.55;
+    }
+    h1 { font-size: 1.9rem; margin-bottom: 0.2rem; }
+    h2 { font-size: 1.35rem; margin-top: 2.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.4rem; }
+    h3 { font-size: 1.05rem; margin-top: 1.6rem; color: #374151; }
+    .subtitle { color: #6b7280; margin-top: 0; }
+    .tldr {
+      background: #d1fae5;
+      border-left: 4px solid #10b981;
+      padding: 0.9rem 1.2rem;
+      margin: 1.5rem 0;
+      border-radius: 4px;
+    }
+    .tldr strong { color: #065f46; }
+    .chart-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1.2rem 1.4rem;
+      margin: 1rem 0 2rem;
+    }
+    .chart-card p {
+      margin: 0 0 0.9rem 0;
+      color: #4b5563;
+      font-size: 0.95rem;
+    }
+    canvas { max-height: 360px; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.92rem;
+      margin: 0.5rem 0 1rem;
+    }
+    th, td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    th { background: #f3f4f6; font-weight: 600; }
+    .delta-good { color: #059669; font-weight: 600; }
+    .delta-bad  { color: #dc2626; font-weight: 600; }
+    .stage-collscan { color: #dc2626; font-family: monospace; }
+    .stage-ixscan   { color: #059669; font-family: monospace; }
+    code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+    .footnote { font-size: 0.85rem; color: #6b7280; margin-top: 1rem; }
+    .nav { font-size: 0.95rem; color: #4b5563; margin-bottom: 0.5rem; }
+    .nav a { color: #2563eb; text-decoration: none; }
+    .nav a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<p class="nav">
+  Reports: <a href="fen-report.html">FenParser</a> ·
+  <a href="mongo-report.html"><strong>Mongo</strong></a> ·
+  <a href="stress-report.html">Stresstest (k6)</a> ·
+  <a href="artillery-report.html">Stresstest (Artillery)</a>
+</p>
+
+<h1>Mongo Persistence – Performance vor / nach Indizes</h1>
+<p class="subtitle">10 008 Spiele in <code>almachess.games</code>. Drei Sichten: Mongo-Plan (explain), HTTP-k6, HTTP-Gatling.</p>
+
+<div class="tldr">
+  <strong>Kurzfassung:</strong> Mit zwei Indizes und einer engeren
+  <code>list()</code>-Projektion fällt die Listen-Latenz von <strong>1,2 s
+  auf 148 ms</strong> (−87 %), der Durchsatz steigt um <strong>+267 %</strong>.
+  Die Listen-Anfrage liest dabei <strong>0 (!) Dokumente</strong> – sie wird
+  komplett aus dem Index beantwortet (<code>PROJECTION_COVERED</code>).
+</div>
+
+<h2>1. Mongo-Plan – wieviele Dokumente werden angefasst?</h2>
+
+<div class="chart-card">
+  <p>Vorher las jede Anfrage alle 10 008 Dokumente (<code>COLLSCAN</code>).
+     Nachher: Punktabfrage berührt 1 Dokument, Listen-Abfrage sogar 0
+     (<code>PROJECTION_COVERED</code> – Antwort kommt aus dem Index).</p>
+  <canvas id="docsExaminedChart"></canvas>
+</div>
+
+<h2>2. Mongo-interne Ausführungszeit pro Query</h2>
+
+<div class="chart-card">
+  <p>Direkt aus <code>explain('executionStats')</code>. Die Listen-Abfrage mit
+     gedroppter <code>_id</code>-Spalte liefert jetzt in <strong>0 ms</strong>
+     – das ist die Stunde der Wahrheit für Index-Optimierung.</p>
+  <canvas id="execTimeChart"></canvas>
+</div>
+
+<h2>3. k6 – HTTP-Latenz pro Endpoint (p95)</h2>
+
+<div class="chart-card">
+  <p>20 Clients, 45 Sekunden, gemischter Traffic (60/25/10/5 GET/LIST/POST/DELETE).
+     <strong>LIST profitiert am meisten</strong> (Covered Query!), aber alle
+     vier Endpoints werden mindestens 50 % schneller.</p>
+  <canvas id="k6LatencyChart"></canvas>
+</div>
+
+<h2>4. k6 – Durchsatz und Anzahl Anfragen</h2>
+
+<div class="chart-card">
+  <p>Selbe Last, aber <strong>+267 % Anfragen pro Sekunde</strong>. Der Server
+     hat schlicht die CPU-Zeit zurück, die er vorher in 10 000-Dokumente-Scans
+     verbrannt hat.</p>
+  <canvas id="k6ThroughputChart"></canvas>
+</div>
+
+<h2>5. Gatling – Globale Latenz</h2>
+
+<div class="chart-card">
+  <p>Bestätigung mit zweitem Tool: mean, p95, p99 und max alle deutlich besser.
+     Tail-Latenz (max) sinkt von 1,68 s auf 0,53 s.</p>
+  <canvas id="gatlingGlobalChart"></canvas>
+</div>
+
+<h2>6. Gatling – Latenz pro Endpoint (p95)</h2>
+
+<div class="chart-card">
+  <p>Auch hier: LIST der größte Gewinner (−75 %). GET und POST verbessern sich
+     um knapp die Hälfte – die restlichen ~250 ms hängen am
+     <code>sharedLock</code>, nicht an Mongo (siehe Stresstest-Bericht).</p>
+  <canvas id="gatlingByEndpointChart"></canvas>
+</div>
+
+<h2>7. Gatling – Durchsatz</h2>
+
+<div class="chart-card">
+  <p>+127 % mehr Anfragen pro Sekunde. Geringerer absoluter Wert als k6, weil
+     Gatling open-loop arbeitet und mit weniger Verbindungen.</p>
+  <canvas id="gatlingThroughputChart"></canvas>
+</div>
+
+<h2>8. Übersichtstabelle</h2>
+
+<div class="chart-card">
+  <h3>Mongo Query-Pläne (executionStats)</h3>
+  <table>
+    <thead><tr><th>Query</th><th>Plan</th><th>docs / keys</th><th>exec ms</th></tr></thead>
+    <tbody>
+      <tr><td>Vorher: find({gameId})</td>
+          <td class="stage-collscan">COLLSCAN</td><td>10 008 / 0</td><td>8</td></tr>
+      <tr><td>Nachher: find({gameId})</td>
+          <td class="stage-ixscan">IXSCAN → FETCH</td><td>1 / 1</td><td>4</td></tr>
+      <tr><td>Vorher: list (mit _id)</td>
+          <td class="stage-collscan">COLLSCAN + SORT</td><td>10 008 / 0</td><td>9</td></tr>
+      <tr><td>Nachher: list (mit _id)</td>
+          <td class="stage-ixscan">IXSCAN → FETCH → LIMIT</td><td>50 / 50</td><td>3</td></tr>
+      <tr><td>Vorher: list (ohne _id)</td>
+          <td class="stage-collscan">COLLSCAN + SORT</td><td>10 008 / 0</td><td>9</td></tr>
+      <tr><td>Nachher: list (ohne _id) <strong>★</strong></td>
+          <td class="stage-ixscan">IXSCAN → PROJECTION_COVERED</td><td><strong>0 / 50</strong></td><td><strong>0</strong></td></tr>
+    </tbody>
+  </table>
+
+  <h3>k6 (20 VUs, 45 s)</h3>
+  <table>
+    <thead><tr><th>Endpoint</th><th>Baseline p95</th><th>Optimiert p95</th><th>Δ</th></tr></thead>
+    <tbody>
+      <tr><td>GET by id</td><td>572 ms</td><td>261 ms</td><td class="delta-good">−54,3 %</td></tr>
+      <tr><td>POST upsert</td><td>537 ms</td><td>256 ms</td><td class="delta-good">−52,3 %</td></tr>
+      <tr><td>LIST</td><td>1 200 ms</td><td>148 ms</td><td class="delta-good">−87,6 %</td></tr>
+      <tr><td>DELETE</td><td>327 ms</td><td>151 ms</td><td class="delta-good">−53,8 %</td></tr>
+      <tr><td>Throughput</td><td>43 req/s</td><td>158 req/s</td><td class="delta-good">+267 %</td></tr>
+      <tr><td>Fehler</td><td>0 %</td><td>0 %</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Gatling (20 User, 45 s)</h3>
+  <table>
+    <thead><tr><th>Metrik</th><th>Baseline</th><th>Optimiert</th><th>Δ</th></tr></thead>
+    <tbody>
+      <tr><td>Mean</td><td>376 ms</td><td>168 ms</td><td class="delta-good">−55,3 %</td></tr>
+      <tr><td>p95 (global)</td><td>658 ms</td><td>312 ms</td><td class="delta-good">−52,6 %</td></tr>
+      <tr><td>p99</td><td>925 ms</td><td>393 ms</td><td class="delta-good">−57,5 %</td></tr>
+      <tr><td>Max</td><td>1 685 ms</td><td>530 ms</td><td class="delta-good">−68,5 %</td></tr>
+      <tr><td>GET p95</td><td>625 ms</td><td>331 ms</td><td class="delta-good">−47 %</td></tr>
+      <tr><td>POST p95</td><td>621 ms</td><td>351 ms</td><td class="delta-good">−43,5 %</td></tr>
+      <tr><td>LIST p95</td><td>779 ms</td><td>194 ms</td><td class="delta-good">−75,1 %</td></tr>
+      <tr><td>Throughput</td><td>51 req/s</td><td>115 req/s</td><td class="delta-good">+126,7 %</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>9. Was wurde geändert?</h2>
+
+<div class="chart-card">
+  <ol>
+    <li><strong>Index <code>gameId_unique</code></strong> (<code>{gameId: 1}, unique</code>) –
+        macht Punktabfragen aus 10 008-Dokumenten-Scans zu 1-Dokument-Lookups.</li>
+    <li><strong>Index <code>savedAt_desc_gameId_asc</code></strong>
+        (<code>{savedAt: -1, gameId: 1}</code>) – ersetzt die In-Memory-Sortierung
+        der Listen-Abfrage durch einen geordneten Index-Scan.</li>
+    <li><strong>list() droppt <code>_id</code></strong> aus der Projektion –
+        ohne <code>_id</code> kann Mongo die Anfrage <strong>komplett aus dem
+        Index</strong> beantworten (<code>PROJECTION_COVERED</code>, 0 Dokumente
+        angefasst).</li>
+    <li><strong>list() bekommt <code>limit(100)</code></strong> – die alte
+        Variante schickte alle 10 008 Spiele zurück; das ist auch mit Index
+        irgendwann teuer.</li>
+  </ol>
+  <p class="footnote">⚠️ <strong>Vertragsänderung:</strong>
+     <code>GET /api/persistence/games</code> liefert jetzt maximal 100 Einträge.
+     Pagination via Cursor ist der nächste Schritt (kann auf demselben Index reiten).</p>
+</div>
+
+<p class="footnote">
+  Rohdaten: <code>perf/results/mongo-explain-{baseline,optimized}.json</code>,
+  <code>k6-mongo-{baseline,optimized}.{txt,json}</code>,
+  <code>gatling-mongo-{baseline,optimized}.txt</code>.<br>
+  Vollständiger Bericht: <code>perf/MONGO.md</code>.
+</p>
+
+<script>
+// ---- Daten -----------------------------------------------------------------
+
+// Mongo: docs examined
+const planLabels       = ['find by gameId', 'list (mit _id)', 'list (ohne _id)'];
+const docsBaseline     = [10008, 10008, 10008];
+const docsOptimized    = [    1,    50,     0];
+
+// Mongo: exec time (ms)
+const execBaseline     = [8, 9, 9];
+const execOptimized    = [4, 3, 0];
+
+// k6: latency p95 per endpoint (ms)
+const k6LatLabels      = ['GET by id', 'POST upsert', 'LIST', 'DELETE'];
+const k6LatBaseline    = [572, 537, 1200, 327];
+const k6LatOptimized   = [261, 256,  148, 151];
+
+// k6: throughput
+const k6ThruLabels     = ['Throughput (req/s)'];
+const k6ThruBaseline   = [43];
+const k6ThruOptimized  = [158];
+
+// Gatling: global latency (ms)
+const gatlingGlobalLabels    = ['mean', 'p95', 'p99', 'max'];
+const gatlingGlobalBaseline  = [376, 658, 925, 1685];
+const gatlingGlobalOptimized = [168, 312, 393,  530];
+
+// Gatling: per-endpoint p95 (ms)
+const gatlingEndLabels       = ['GET p95', 'POST p95', 'LIST p95'];
+const gatlingEndBaseline     = [625, 621, 779];
+const gatlingEndOptimized    = [331, 351, 194];
+
+// Gatling: throughput
+const gatlingThruLabels      = ['Throughput (req/s)'];
+const gatlingThruBaseline    = [51];
+const gatlingThruOptimized   = [115];
+
+// ---- Helpers ---------------------------------------------------------------
+
+const COLOR_BASELINE  = '#94a3b8';
+const COLOR_OPTIMIZED = '#10b981';
+
+function compareBarChart(canvasId, labels, baseline, optimized, title, yLabel, log) {
+  const opts = {
+    responsive: true,
+    plugins: {
+      title: { display: true, text: title }
+    },
+    scales: {}
+  };
+  if (log) {
+    opts.scales.y = { type: 'logarithmic', title: { display: true, text: yLabel + ' (log)' } };
+  } else {
+    opts.scales.y = { beginAtZero: true, title: { display: true, text: yLabel } };
+  }
+  new Chart(document.getElementById(canvasId), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Baseline',  data: baseline,  backgroundColor: COLOR_BASELINE  },
+        { label: 'Optimiert', data: optimized, backgroundColor: COLOR_OPTIMIZED }
+      ]
+    },
+    options: opts
+  });
+}
+
+// ---- Charts ----------------------------------------------------------------
+
+compareBarChart('docsExaminedChart', planLabels, docsBaseline, docsOptimized,
+                'Untersuchte Dokumente pro Anfrage (niedriger besser, log-Skala)',
+                'Dokumente', true);
+
+compareBarChart('execTimeChart', planLabels, execBaseline, execOptimized,
+                'Mongo executionTimeMillis pro Anfrage', 'ms', false);
+
+compareBarChart('k6LatencyChart', k6LatLabels, k6LatBaseline, k6LatOptimized,
+                'k6 p95-Latenz pro Endpoint', 'ms', false);
+
+compareBarChart('k6ThroughputChart', k6ThruLabels, k6ThruBaseline, k6ThruOptimized,
+                'k6 Durchsatz', 'Anfragen/Sekunde', false);
+
+compareBarChart('gatlingGlobalChart', gatlingGlobalLabels, gatlingGlobalBaseline, gatlingGlobalOptimized,
+                'Gatling globale Latenz (ms, log-Skala)', 'ms', true);
+
+compareBarChart('gatlingByEndpointChart', gatlingEndLabels, gatlingEndBaseline, gatlingEndOptimized,
+                'Gatling p95 pro Endpoint', 'ms', false);
+
+compareBarChart('gatlingThroughputChart', gatlingThruLabels, gatlingThruBaseline, gatlingThruOptimized,
+                'Gatling Durchsatz', 'Anfragen/Sekunde', false);
+</script>
+</body>
+</html>

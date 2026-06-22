@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>AlmaChess – Stresstest Ergebnisse</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      color: #1f2937;
+      line-height: 1.55;
+    }
+    h1 { font-size: 1.9rem; margin-bottom: 0.2rem; }
+    h2 { font-size: 1.35rem; margin-top: 2.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.4rem; }
+    h3 { font-size: 1.05rem; margin-top: 1.6rem; color: #374151; }
+    .subtitle { color: #6b7280; margin-top: 0; }
+    .tldr {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 0.9rem 1.2rem;
+      margin: 1.5rem 0;
+      border-radius: 4px;
+    }
+    .tldr strong { color: #92400e; }
+    .chart-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1.2rem 1.4rem;
+      margin: 1rem 0 2rem;
+    }
+    .chart-card p {
+      margin: 0 0 0.9rem 0;
+      color: #4b5563;
+      font-size: 0.95rem;
+    }
+    canvas { max-height: 360px; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.92rem;
+      margin: 0.5rem 0 1rem;
+    }
+    th, td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    th { background: #f3f4f6; font-weight: 600; }
+    .ok    { color: #059669; font-weight: 600; }
+    .warn  { color: #d97706; font-weight: 600; }
+    .fail  { color: #dc2626; font-weight: 600; }
+    code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+    .footnote { font-size: 0.85rem; color: #6b7280; margin-top: 1rem; }
+    .nav { font-size: 0.95rem; color: #4b5563; margin-bottom: 0.5rem; }
+    .nav a { color: #2563eb; text-decoration: none; }
+    .nav a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<p class="nav">
+  Reports: <a href="fen-report.html">FenParser</a> ·
+  <a href="mongo-report.html">Mongo</a> ·
+  <a href="stress-report.html"><strong>Stresstest (k6)</strong></a> ·
+  <a href="artillery-report.html">Stresstest (Artillery)</a>
+</p>
+
+<h1>AlmaChess – Stresstest</h1>
+<p class="subtitle">Wo bricht die Persistenz-API zusammen, und woran liegt es?</p>
+
+<div class="tldr">
+  <strong>Kurzfassung:</strong> Bei 75 parallelen Clients läuft alles stabil.
+  Bei 150 Clients explodiert die p95-Latenz von 1,2 s auf 9,2 s und 5 % der
+  Anfragen schlagen fehl – das ist der Knee-Point. Schuld ist nicht Mongo
+  (bleibt entspannt), sondern der globale <code>sharedLock</code> im API-Server.
+</div>
+
+<h2>1. Latenz vs. Anzahl Clients (VUs)</h2>
+
+<div class="chart-card">
+  <p>Mittelwert, p95 und p99 pro Lastestufe. Das p95/p99 von ~9,9 s bei 150+ VUs
+     sind eingelaufene Client-Timeouts (10 s Limit) – die echte Antwortzeit
+     liegt darüber. <strong>Sichtbarer Knick zwischen 75 und 150 VUs.</strong></p>
+  <canvas id="latencyChart"></canvas>
+</div>
+
+<h2>2. Fehlerrate vs. Anzahl Clients</h2>
+
+<div class="chart-card">
+  <p>Bis 75 VUs schaffen alle Anfragen eine 2xx-Antwort. Ab 150 VUs fängt
+     der Server an Anfragen fallen zu lassen, ab 300 VUs ist jeder fünfte
+     Request kaputt.</p>
+  <canvas id="errorChart"></canvas>
+</div>
+
+<h2>3. Durchsatz und Anzahl bearbeiteter Anfragen pro Stufe</h2>
+
+<div class="chart-card">
+  <p>Mehr Clients bringen ab L150 keinen zusätzlichen Durchsatz – die Anfragen
+     stauen sich nur länger vor dem Lock. Klassisches Sättigungs-Plateau.</p>
+  <canvas id="throughputChart"></canvas>
+</div>
+
+<h2>4. CPU-Auslastung während des Stresstests</h2>
+
+<div class="chart-card">
+  <p>API-Container (orange) springt ab Sekunde ~70 (= 75 VUs in Aktion) auf
+     <strong>140–400 % CPU</strong> – also mehr als ein voller Kern dauerhaft
+     belegt. Mongo (lila) bleibt unter 130 %. Der Bottleneck sitzt im
+     JVM-Prozess der API, nicht in der Datenbank.</p>
+  <canvas id="cpuChart"></canvas>
+  <p class="footnote">Werte aus <code>docker stats</code>, 5-Sekunden-Sampling.
+     Vertikale Linien markieren den Stufenwechsel.</p>
+</div>
+
+<h2>5. Speicherverbrauch während des Stresstests</h2>
+
+<div class="chart-card">
+  <p>API-Heap wächst von 197 MiB auf 700 MiB (≈ 3,5×) während die Lock-Schlange
+     vor <code>sharedLock.synchronized</code> mit Anfragen + DTOs vollläuft.
+     Mongo bewegt sich kaum.</p>
+  <canvas id="ramChart"></canvas>
+</div>
+
+<h2>6. Übersichtstabelle</h2>
+
+<div class="chart-card">
+  <table>
+    <thead>
+      <tr>
+        <th>Stufe</th><th>VUs</th><th>Anfragen</th><th>Mittelwert</th>
+        <th>p95</th><th>p99</th><th>Fehler</th><th>Bewertung</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>L030</td><td>30</td><td>3 417</td><td>263 ms</td><td>468 ms</td><td>582 ms</td><td>0 %</td><td class="ok">gesund</td></tr>
+      <tr><td>L075</td><td>75</td><td>3 401</td><td>666 ms</td><td>1,22 s</td><td>1,65 s</td><td>0 %</td><td class="warn">degradiert, stabil</td></tr>
+      <tr><td>L150</td><td>150</td><td>3 633</td><td>1,24 s</td><td>9,19 s</td><td>10,04 s</td><td>4,95 %</td><td class="fail">Knee-Point</td></tr>
+      <tr><td>L300</td><td>300</td><td>3 712</td><td>2,41 s</td><td>9,98 s</td><td>10,01 s</td><td>17,69 %</td><td class="fail">scheitert</td></tr>
+      <tr><td>L500</td><td>500</td><td>4 447</td><td>3,39 s</td><td>9,97 s</td><td>9,99 s</td><td>25,77 %</td><td class="fail">kaputt</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>7. Was bedeutet das?</h2>
+
+<div class="chart-card">
+  <p>Empfehlungen aus den Daten – sortiert nach erwartetem Effekt:</p>
+  <ol>
+    <li><strong>GET-Endpoints aus dem <code>sharedLock</code> herausziehen.</strong>
+        Lese-Anfragen mutieren aktuell den Controller-State (deshalb der Lock).
+        Reine DTO-Rückgabe würde p95 von 261 ms auf ~5 ms drücken.</li>
+    <li><strong>Lock pro <code>gameId</code></strong> statt einem globalen
+        Mutex – verschiedene Spiele blockieren sich nicht mehr gegenseitig.</li>
+    <li><strong>Akka-HTTP <code>max-open-requests</code></strong> setzen, damit
+        überlastete Anfragen mit 503 schnell abgelehnt werden statt 10 s zu
+        warten.</li>
+    <li><strong>Production-Limit:</strong> ≤ 75 gleichzeitige Clients pro
+        API-Container. Alarm bei p95 &gt; 1 s oder Fehlerrate &gt; 5 %.</li>
+  </ol>
+</div>
+
+<p class="footnote">
+  Rohdaten: <code>perf/results/k6-stress.txt</code>,
+  <code>perf/results/k6-stress.json</code>,
+  <code>perf/results/k6-stress-dockerstats.log</code>.<br>
+  Vollständiger Bericht: <code>perf/STRESS.md</code>.
+</p>
+
+<script>
+// ---- Daten aus den Stresstest-Ergebnissen ----------------------------------
+
+const stages   = ['L030 (30 VUs)', 'L075 (75 VUs)', 'L150 (150 VUs)', 'L300 (300 VUs)', 'L500 (500 VUs)'];
+const vus      = [30, 75, 150, 300, 500];
+const meanMs   = [263,  666, 1240, 2410, 3390];
+const p95Ms    = [468, 1220, 9190, 9980, 9970];
+const p99Ms    = [582, 1650,10040,10010, 9990];
+const errorPct = [0,    0,    4.95, 17.69, 25.77];
+const reqs     = [3417, 3401, 3633, 3712, 4447];
+
+// ---- Chart 1 : Latenz ------------------------------------------------------
+
+new Chart(document.getElementById('latencyChart'), {
+  type: 'line',
+  data: {
+    labels: stages,
+    datasets: [
+      { label: 'Mittelwert', data: meanMs,
+        borderColor: '#3b82f6', backgroundColor: '#3b82f680', tension: 0.25 },
+      { label: 'p95',        data: p95Ms,
+        borderColor: '#f59e0b', backgroundColor: '#f59e0b80', tension: 0.25 },
+      { label: 'p99',        data: p99Ms,
+        borderColor: '#dc2626', backgroundColor: '#dc262680', tension: 0.25 },
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      title:   { display: true, text: 'HTTP-Latenz pro Laststufe (ms, log-Skala)' },
+      tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('de-DE')} ms` } }
+    },
+    scales: {
+      y: { type: 'logarithmic', title: { display: true, text: 'Latenz (ms, log)' } }
+    }
+  }
+});
+
+// ---- Chart 2 : Fehlerrate --------------------------------------------------
+
+new Chart(document.getElementById('errorChart'), {
+  type: 'bar',
+  data: {
+    labels: stages,
+    datasets: [{
+      label: 'Fehlerrate (%)',
+      data: errorPct,
+      backgroundColor: errorPct.map(e =>
+        e === 0 ? '#10b981' : e < 10 ? '#f59e0b' : '#dc2626')
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      title:  { display: true, text: 'Anteil fehlgeschlagener Anfragen' },
+      legend: { display: false }
+    },
+    scales: { y: { beginAtZero: true, title: { display: true, text: '%' } } }
+  }
+});
+
+// ---- Chart 3 : Throughput ---------------------------------------------------
+
+new Chart(document.getElementById('throughputChart'), {
+  type: 'bar',
+  data: {
+    labels: stages,
+    datasets: [{
+      label: 'Anfragen pro Stufe (30 s)',
+      data: reqs,
+      backgroundColor: '#6366f1'
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      title:  { display: true, text: 'Bearbeitete Anfragen pro 30-Sekunden-Stufe' },
+      legend: { display: false }
+    },
+    scales: { y: { beginAtZero: true, title: { display: true, text: 'Anfragen' } } }
+  }
+});
+
+// ---- docker stats Time-Series (gefilterter Stresstest-Zeitraum) ------------
+//
+// Sekunden ab Stresstest-Start (≈ 15:28:30). Daten aus k6-stress-dockerstats.log,
+// gekürzt auf das Stresstest-Fenster.
+
+const tSec       = [   0,   8,  16,  24,  32,  41,  49,  57,  65,  73,  81,  89,  97, 105, 113, 121, 129, 136, 144, 152, 160, 168, 176, 185, 193];
+const apiCpu     = [0.94,392.65,231.67,216.75,199.71,145.88,184.96,165.99,211.07,149.19,140.11,365.91,141.66,149.64,177.14,146.24,143.75,145.37,151.07,129.29,136.44,107.45,139.06,247.47,0.97];
+const mongoCpu   = [0.70,75.94,107.27,73.04,15.17,10.82,37.10,67.72,11.99,16.05,25.25,82.25,11.77,9.34,16.49,112.07,126.80,47.35,12.58,7.65,67.86,126.79,21.39,18.54,52.90];
+const apiRam     = [197.0,450.9,511.1,527.9,547.6,630.4,619.4,637.0,641.9,656.8,661.5,677.6,680.8,695.8,695.9,696.2,705.1,698.5,698.8,698.9,699.0,699.2,699.2,698.7,699.2];
+const mongoRam   = [314.9,472.6,329.6,339.5,339.5,339.6,418.2,339.7,339.7,328.5,375.7,330.0,330.0,330.3,330.3,499.1,332.2,335.8,336.2,336.3,499.5,516.8,339.1,339.1,502.1];
+
+// Stufengrenzen relativ zum Teststart (warmup 0–30, L030 30–60, ...)
+const stageLines = {
+  id: 'stageLines',
+  beforeDraw: chart => {
+    const { ctx, chartArea: a, scales: { x } } = chart;
+    if (!a) return;
+    ctx.save();
+    ctx.strokeStyle = '#9ca3af';
+    ctx.setLineDash([4, 4]);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#6b7280';
+    [
+      { sec:  30, label: 'L030' },
+      { sec:  60, label: 'L075' },
+      { sec:  90, label: 'L150' },
+      { sec: 120, label: 'L300' },
+      { sec: 150, label: 'L500' }
+    ].forEach(({ sec, label }) => {
+      const px = x.getPixelForValue(sec);
+      ctx.beginPath();
+      ctx.moveTo(px, a.top);
+      ctx.lineTo(px, a.bottom);
+      ctx.stroke();
+      ctx.fillText(label, px + 3, a.top + 12);
+    });
+    ctx.restore();
+  }
+};
+
+// ---- Chart 4 : CPU ---------------------------------------------------------
+
+new Chart(document.getElementById('cpuChart'), {
+  type: 'line',
+  data: {
+    labels: tSec,
+    datasets: [
+      { label: 'API-Container (%)',   data: apiCpu,
+        borderColor: '#f97316', backgroundColor: '#f9731633', fill: true, tension: 0.2, pointRadius: 2 },
+      { label: 'Mongo-Container (%)', data: mongoCpu,
+        borderColor: '#8b5cf6', backgroundColor: '#8b5cf633', fill: true, tension: 0.2, pointRadius: 2 },
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      title:   { display: true, text: 'CPU-Auslastung während des Tests (% pro Container)' },
+      tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} %` } }
+    },
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'Sekunden seit Teststart' } },
+      y: { beginAtZero: true, title: { display: true, text: 'CPU %' } }
+    }
+  },
+  plugins: [stageLines]
+});
+
+// ---- Chart 5 : RAM ---------------------------------------------------------
+
+new Chart(document.getElementById('ramChart'), {
+  type: 'line',
+  data: {
+    labels: tSec,
+    datasets: [
+      { label: 'API-Container (MiB)',   data: apiRam,
+        borderColor: '#f97316', backgroundColor: '#f9731633', fill: true, tension: 0.2, pointRadius: 2 },
+      { label: 'Mongo-Container (MiB)', data: mongoRam,
+        borderColor: '#8b5cf6', backgroundColor: '#8b5cf633', fill: true, tension: 0.2, pointRadius: 2 },
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      title:   { display: true, text: 'Speicherverbrauch (MiB pro Container)' },
+      tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} MiB` } }
+    },
+    scales: {
+      x: { type: 'linear', title: { display: true, text: 'Sekunden seit Teststart' } },
+      y: { beginAtZero: true, title: { display: true, text: 'RAM MiB' } }
+    }
+  },
+  plugins: [stageLines]
+});
+</script>
+</body>
+</html>

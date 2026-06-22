@@ -38,7 +38,12 @@ COPY --from=builder /build/target/universal/stage /app
 # Default main class — override per service in docker-compose via MAIN_CLASS.
 ENV MAIN_CLASS=de.htwg.softwarearchitecture.almachess.api.Server
 
-EXPOSE 8080 8081 8082
+# The image is reused for three roles via MAIN_CLASS; the port comes from env
+# (ALMACHESS_PORT for the API, NOTATION_PORT for NotationService, AI_PORT for
+# AiService). The values listed here document the ports used by the Compose
+# stack (API 8083, NotationService 8084, AiService 8082); only the one that
+# matches the active role actually listens at runtime.
+EXPOSE 8082 8083 8084
 
 # sbt-native-packager's bash launcher supports `-main` to swap the entry point.
 ENTRYPOINT ["/bin/sh", "-c", "exec /app/bin/almachess -main \"$MAIN_CLASS\""]

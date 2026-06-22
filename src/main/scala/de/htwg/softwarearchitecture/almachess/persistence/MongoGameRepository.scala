@@ -2,15 +2,17 @@ package de.htwg.softwarearchitecture.almachess.persistence
 
 import org.bson.Document
 import org.mongodb.scala.{MongoClient, MongoCollection, MongoDatabase, ObservableFuture, SingleObservableFuture}
-import org.mongodb.scala.model.{Filters, ReplaceOptions}
+import org.mongodb.scala.model.{Filters, IndexOptions, Indexes, ReplaceOptions}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.*
+import scala.util.{Failure, Success}
 
 final class MongoGameRepository(
     uri: String,
     databaseName: String = "almachess",
-    collectionName: String = "games"
+    collectionName: String = "games",
+    listLimit: Int = 100
 )(using ec: ExecutionContext) extends GameRepository:
 
   override val name: String = "mongo"
@@ -18,6 +20,23 @@ final class MongoGameRepository(
   private val client: MongoClient            = MongoClient(uri)
   private val db: MongoDatabase              = client.getDatabase(databaseName)
   private val games: MongoCollection[Document] = db.getCollection(collectionName)
+
+  // Best-effort index bootstrap. Every query in this file filters or sorts on
+  // these fields; without indexes the collection is COLLSCAN-only.
+  games.createIndex(
+    Indexes.ascending("gameId"),
+    IndexOptions().unique(true).name("gameId_unique")
+  ).toFuture().onComplete {
+    case Success(_)  => ()
+    case Failure(ex) => System.err.println(s"[mongo] gameId index init failed: ${ex.getMessage}")
+  }
+  games.createIndex(
+    Indexes.compoundIndex(Indexes.descending("savedAt"), Indexes.ascending("gameId")),
+    IndexOptions().name("savedAt_desc_gameId_asc")
+  ).toFuture().onComplete {
+    case Success(_)  => ()
+    case Failure(ex) => System.err.println(s"[mongo] savedAt index init failed: ${ex.getMessage}")
+  }
 
   override def save(game: GameSaveDto): Future[Unit] =
     val ts = if game.savedAt > 0 then game.savedAt else System.currentTimeMillis()
@@ -45,8 +64,11 @@ final class MongoGameRepository(
   override def list(): Future[List[GameListEntry]] =
     games
       .find()
-      .projection(new Document("gameId", 1).append("savedAt", 1))
+      // Drop _id so the projection is fully covered by savedAt_desc_gameId_asc
+      // and Mongo can serve the page from the index without touching documents.
+      .projection(new Document("gameId", 1).append("savedAt", 1).append("_id", 0))
       .sort(new Document("savedAt", -1))
+      .limit(listLimit)
       .toFuture()
       .map { docs =>
         docs.toList.map { d =>

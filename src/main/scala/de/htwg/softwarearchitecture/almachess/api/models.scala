@@ -46,6 +46,14 @@ case class BestMoveRequest(
     skill: Option[Int] = None
 )
 case class BestMoveResponse(move: Option[String], error: Option[String] = None)
+case class EvaluateRequest(fen: String, depth: Option[Int] = None)
+case class EvaluateResponse(
+    centipawns: Option[Int]    = None,
+    mate:       Option[Int]    = None,
+    bestMove:   Option[String] = None,
+    depth:      Option[Int]    = None,
+    error:      Option[String] = None
+)
 case class AiStatusResponse(
     enabled: Boolean,
     backend: String,
@@ -79,6 +87,52 @@ case class LiveGameDto(
 )
 case class LiveStatusResponse(enabled: Boolean, backend: String, ttlSeconds: Int)
 
+// --- Lichess DTOs ---
+case class LichessChallengeRequest(
+    username: String,
+    mode: String,
+    color: String,
+    timeControl: String,
+    rated: Boolean
+)
+case class LichessMoveRequest(from: String, to: String, promotion: Option[String] = None)
+case class LichessAutoMoveRequest(
+    depth: Option[Int] = None,
+    movetime: Option[Int] = None,
+    skill: Option[Int] = None
+)
+case class LichessAutoMoveResponse(move: String, status: LichessStatusResponse)
+case class LichessSessionDto(
+    gameId: String,
+    mode: String,             // "board" | "bot"
+    yourColor: String,        // "white" | "black"
+    fen: String,
+    yourTurn: Boolean,
+    gameOver: Boolean,
+    status: String,
+    turn: String,
+    lastMove: Option[String] = None,
+    opponent: Option[String] = None,
+    moves: List[String] = Nil,
+    streamStatus: String = "",
+    // Live clock (None for correspondence games)
+    whiteMs: Option[Long] = None,
+    blackMs: Option[Long] = None,
+    clockInitialMs: Option[Long] = None,
+    clockIncrementMs: Option[Long] = None,
+    // Side currently in check, or None
+    inCheck: Option[String] = None,
+    // Set when the game ends and Lichess names a winner
+    winner: Option[String] = None
+)
+case class LichessStatusResponse(
+    enabled: Boolean,
+    baseUrl: String,
+    boardToken: Boolean,      // Board API token (human plays)
+    botToken: Boolean,        // Bot API token (engine plays)
+    session: Option[LichessSessionDto] = None
+)
+
 object JsonFormats extends DefaultJsonProtocol:
   given RootJsonFormat[MoveRequest]         = jsonFormat3(MoveRequest.apply)
   given RootJsonFormat[FenLoadRequest]      = jsonFormat1(FenLoadRequest.apply)
@@ -101,6 +155,8 @@ object JsonFormats extends DefaultJsonProtocol:
   given RootJsonFormat[PgnParseResponse]    = jsonFormat2(PgnParseResponse.apply)
   given RootJsonFormat[BestMoveRequest]     = jsonFormat4(BestMoveRequest.apply)
   given RootJsonFormat[BestMoveResponse]    = jsonFormat2(BestMoveResponse.apply)
+  given RootJsonFormat[EvaluateRequest]     = jsonFormat2(EvaluateRequest.apply)
+  given RootJsonFormat[EvaluateResponse]    = jsonFormat5(EvaluateResponse.apply)
   given RootJsonFormat[AiStatusResponse]    = jsonFormat4(AiStatusResponse.apply)
 
   given RootJsonFormat[PersistenceGameDto]        = jsonFormat7(PersistenceGameDto.apply)
@@ -110,3 +166,10 @@ object JsonFormats extends DefaultJsonProtocol:
 
   given RootJsonFormat[LiveGameDto]        = jsonFormat7(LiveGameDto.apply)
   given RootJsonFormat[LiveStatusResponse] = jsonFormat3(LiveStatusResponse.apply)
+
+  given RootJsonFormat[LichessChallengeRequest] = jsonFormat5(LichessChallengeRequest.apply)
+  given RootJsonFormat[LichessMoveRequest]      = jsonFormat3(LichessMoveRequest.apply)
+  given RootJsonFormat[LichessAutoMoveRequest]  = jsonFormat3(LichessAutoMoveRequest.apply)
+  given RootJsonFormat[LichessSessionDto]       = jsonFormat18(LichessSessionDto.apply)
+  given RootJsonFormat[LichessStatusResponse]   = jsonFormat5(LichessStatusResponse.apply)
+  given RootJsonFormat[LichessAutoMoveResponse] = jsonFormat2(LichessAutoMoveResponse.apply)
