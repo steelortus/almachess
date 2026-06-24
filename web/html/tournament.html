@@ -85,6 +85,55 @@
                  margin-left: 6px; vertical-align: middle; background: #758095; }
     .ai-status.ok   { background: #4caf50; }
     .ai-status.bad  { background: #d85050; }
+    /* === Header board toggle === */
+    .toggle-pill { background: #3a4257; color: #d8dde6; border: 1px solid #4a536a;
+                   padding: 4px 11px; border-radius: 14px; cursor: pointer;
+                   font: inherit; font-size: 12px; font-weight: 500; user-select: none;
+                   transition: background .15s, border-color .15s; }
+    .toggle-pill:hover { background: #4a536a; }
+    .toggle-pill.active { background: #28344a; border-color: #88a2d8; color: #c2d4f6; }
+    /* === Chess board === */
+    .board-panel { display: none; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .board-panel.shown { display: flex; }
+    .board-wrap { display: grid; grid-template-columns: 14px 1fr; grid-template-rows: 1fr 14px;
+                  gap: 2px; align-self: center; max-height: 100%; aspect-ratio: 1 / 1;
+                  min-height: 0; }
+    .board-grid { display: grid; grid-template-columns: repeat(8, 1fr);
+                  grid-template-rows: repeat(8, 1fr); border: 1px solid #15191f;
+                  width: 100%; height: 100%; min-height: 0; }
+    .square { display: flex; align-items: center; justify-content: center;
+              font-size: clamp(14px, 3.4vh, 30px); line-height: 1; user-select: none;
+              position: relative; }
+    .square.light { background: #ecd9b3; color: #1a1a1a; }
+    .square.dark  { background: #b58863; color: #1a1a1a; }
+    .square.last-from, .square.last-to { box-shadow: inset 0 0 0 3px #e0b88a; }
+    .square.last-to { background: #f7c873 !important; }
+    .file-labels, .rank-labels {
+      display: grid; font-size: 10px; color: #758095; text-align: center;
+      align-items: center; justify-items: center;
+    }
+    .file-labels { grid-template-columns: repeat(8, 1fr); grid-column: 2 / 3; grid-row: 2 / 3; }
+    .rank-labels { grid-template-rows: repeat(8, 1fr); grid-column: 1 / 2; grid-row: 1 / 2; }
+    .board-meta { display: flex; gap: 10px; align-items: center; justify-content: space-between;
+                  font-size: 11px; color: #c2cce4; padding: 0 2px; }
+    .board-meta .turn-dot { display: inline-block; width: 9px; height: 9px;
+                            border-radius: 50%; vertical-align: middle; margin-right: 4px;
+                            border: 1px solid #758095; }
+    .board-meta .turn-dot.white { background: #f0f0f0; }
+    .board-meta .turn-dot.black { background: #1f1f1f; }
+    .board-meta code { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px;
+                       color: #88a2d8; }
+    .nav-row { display: flex; gap: 4px; align-items: center; justify-content: center;
+               padding: 2px 0; }
+    .nav-row button { padding: 3px 9px; background: #3a4257; border: 0; color: #d8dde6;
+                      border-radius: 3px; cursor: pointer; font-size: 12px; line-height: 1.2; }
+    .nav-row button:hover { background: #4a536a; }
+    .nav-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .nav-row #nav-pos { font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+                        color: #c2cce4; min-width: 70px; text-align: center; }
+    .nav-row .live-tag { font-size: 10px; padding: 2px 7px; border-radius: 9px;
+                         background: #1f7340; color: white; font-weight: 600; }
+    .nav-row .live-tag.paused { background: #735b1f; }
     /* === Log === */
     #logbox { background: #15191f; border: 1px solid #3a4257; border-radius: 6px;
               padding: 8px 10px; flex: 1; min-height: 0; overflow-y: auto;
@@ -116,6 +165,7 @@
       <span id="meta-tid" class="meta-chip" hidden></span>
       <span id="meta-bot" class="meta-chip" hidden></span>
     </div>
+    <button id="btn-board-toggle" class="toggle-pill" type="button" aria-pressed="false">♟ Brett</button>
     <a href="index.html">← Hauptseite</a>
   </header>
 
@@ -214,8 +264,33 @@
       </details>
     </section>
 
-    <!-- ===== LOG (right) ===== -->
+    <!-- ===== BOARD + LOG (right) ===== -->
     <section class="card">
+      <!-- Board panel — toggled by header pill, hidden by default -->
+      <div id="board-panel" class="board-panel">
+        <div class="board-meta">
+          <span>
+            <span id="board-turn-dot" class="turn-dot white"></span>
+            <span id="board-turn-text">— am Zug</span>
+          </span>
+          <span id="board-game-info">—</span>
+          <span>letzter Zug: <code id="board-last-move">—</code></span>
+        </div>
+        <div class="board-wrap">
+          <div id="rank-labels" class="rank-labels"></div>
+          <div id="board-grid" class="board-grid"></div>
+          <div id="file-labels" class="file-labels"></div>
+        </div>
+        <div class="nav-row">
+          <button id="nav-first" title="zur Anfangsstellung">⏮</button>
+          <button id="nav-prev"  title="ein Zug zurück">◀</button>
+          <span id="nav-pos">0 / 0</span>
+          <button id="nav-next"  title="ein Zug vor">▶</button>
+          <button id="nav-last"  title="zur aktuellen Stellung">⏭</button>
+          <span id="nav-live" class="live-tag">live</span>
+        </div>
+      </div>
+
       <div class="log-controls">
         <h2 style="margin: 0;">Live-Log</h2>
         <div class="right">
@@ -312,6 +387,8 @@
       div.textContent = line;
       logbox.appendChild(div);
       if (autoScroll) logbox.scrollTop = logbox.scrollHeight;
+      // Mirror relevant events into the chess board tracker. Cheap when off.
+      try { consumeLogForBoard(line); } catch (_) {}
     }
     function classifyLine(line) {
       if (/gameEnd|tournamentFinished|aborted|fail|rejected|Error/i.test(line)) return 'error';
@@ -345,25 +422,43 @@
       $('btn-quickstart').disabled = running;
       $('btn-join').disabled = running;
       $('btn-stop').disabled = !running;
-      if (phase === 'Finished' && s.tournamentId) showResultStrip(s);
+      if (phase === 'Finished' && s.tournamentId) refreshResultStrip(s.tournamentId, true);
       if (phase === 'Idle' || phase === 'Error') $('result-strip').style.display = 'none';
     }
 
-    async function showResultStrip(s) {
+    // Updated on every roundFinished + tournamentFinished. Compares POINTS
+    // (the authoritative ranking source) instead of raw W/L counts so a
+    // multi-round 1W-1L gets correctly labelled as draw on points.
+    let lastResultTid = null;
+    async function refreshResultStrip(tid, isFinal) {
       const strip = $('result-strip');
       try {
-        const r = await fetch($('cfg-base').value.trim().replace(/\/$/, '')
-                              + '/api/tournament/' + s.tournamentId);
-        const j = await r.json();
-        const me = j.standing?.players?.find(p => p.bot.name === $('cfg-botname').value.trim());
+        const base = $('cfg-base').value.trim().replace(/\/$/, '');
+        const j = await (await fetch(`${base}/api/tournament/${tid}`)).json();
+        // Match ourselves either by the cached bot id from the status SSE,
+        // or by name as a fallback. Name match is fragile if multiple
+        // tournaments share a name across sessions.
+        const meId = ($('meta-bot').textContent || '').slice(4);
+        const myName = $('cfg-botname').value.trim();
+        const players = j.standing?.players || [];
+        let me = players.find(p => p.bot.id === meId)
+              || players.find(p => p.bot.name === myName);
         if (!me) { strip.style.display = 'none'; return; }
-        const won = me.wins > me.losses;
-        const drawn = me.wins === me.losses;
-        strip.className = 'result-strip ' + (won ? 'win' : drawn ? 'draw' : 'loss');
+        const oppBest = players.filter(p => p !== me)
+                               .reduce((mx, p) => Math.max(mx, p.points), -Infinity);
+        const verdict = me.points > oppBest ? 'win'
+                       : me.points < oppBest ? 'loss' : 'draw';
+        const label = verdict === 'win'  ? '✅ Gewonnen'
+                    : verdict === 'loss' ? '❌ Verloren'
+                                         : '➖ Unentschieden';
+        const round = j.round || '–';
+        const totalRounds = j.nbRounds || '?';
+        const stage = isFinal ? 'Endergebnis' : `Stand nach Runde ${round}/${totalRounds}`;
+        strip.className = 'result-strip ' + verdict;
         strip.style.display = 'block';
-        strip.textContent = (won ? '✅ Gewonnen' : drawn ? '➖ Unentschieden' : '❌ Verloren')
-          + `  ·  ${me.wins}W / ${me.draws}D / ${me.losses}L  ·  ${me.points} Pkt`;
-      } catch (e) { strip.style.display = 'none'; }
+        strip.textContent = `${label}  ·  ${stage}  ·  ${me.wins}W/${me.draws}D/${me.losses}L  ·  ${me.points} Pkt  ·  Rang ${me.rank}/${players.length}`;
+        lastResultTid = tid;
+      } catch (e) { /* keep prior strip visible on network blip */ }
     }
 
     // ---- SSE subscription ----
@@ -444,6 +539,12 @@
       $('btn-quickstart').disabled = true;
       logbox.innerHTML = '';  // fresh log for fresh run
       $('result-strip').style.display = 'none';
+      // Reset replay history so we don't show last tournament's moves
+      trackedGid = null;
+      resetReplay();
+      lastGameStatus = ''; lastOppName = '?';
+      lastResultTid = null;
+      if (boardOn) { renderEmptyBoard(); renderAt(-1); }
       try {
         const r = await fetch(api('/api/tournament/quickstart'), {
           method: 'POST', headers: {'Content-Type':'application/json'},
@@ -466,6 +567,358 @@
       try { await fetch(api('/api/tournament/stop'), {method:'POST'}); }
       catch (ex) { appendLog('error', '[ui] stop exception: ' + ex.message); }
     });
+
+    // ====== CHESS BOARD ======
+    // Board state is reconstructed locally from a UCI move history so the
+    // user can navigate every move even when Stockfish blitzes through them.
+    // We pull the current game snapshot every 1.2s, append any new moves
+    // to `moveHistory`, and lazily replay them through `applyUci` to get
+    // a FEN for any historic move index.
+    const PIECE_UNICODE = {
+      K:'♔', Q:'♕', R:'♖', B:'♗', N:'♘', P:'♙',
+      k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟'
+    };
+    const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+    let boardOn      = false;
+    let trackedGid   = null;
+    let ourColor     = 'white';      // 'white' or 'black' — flips the board
+    let pollTimer    = null;
+
+    // Per-game replay state (reset on each new gameStart)
+    let startFen      = START_FEN;
+    let moveHistory   = [];          // ['e2e4', 'c7c5', ...]
+    let fenCache      = [];          // fenCache[i] = FEN after move i
+    let currentIdx    = -1;          // -1 = startpos, 0 = after move[0], ...
+    let liveMode      = true;        // when true, jump to latest on each poll
+
+    function squareName(file, rank) { return 'abcdefgh'[file] + (rank + 1); }
+    function nameToFileRank(name) {
+      return [name.charCodeAt(0) - 97, parseInt(name[1], 10) - 1];
+    }
+
+    // ---- Minimal chess FEN updater ----
+    // Implements just enough to roll a position forward by one UCI move:
+    // piece moves, captures, castling, en passant, promotion, ep target,
+    // castling rights, halfmove + fullmove clocks. NOT a legal-move
+    // generator — we trust the server, who already validated.
+    function fenToBoard(piecePart) {
+      const ranks = piecePart.split('/');
+      const board = Array.from({length: 8}, () => Array(8).fill(null));
+      for (let i = 0; i < 8; i++) {       // ranks[0] = rank 8 -> board[7]
+        const r = 7 - i;
+        let f = 0;
+        for (const ch of ranks[i]) {
+          if (/\d/.test(ch)) f += +ch;
+          else board[r][f++] = ch;
+        }
+      }
+      return board;
+    }
+    function boardToFen(board) {
+      const out = [];
+      for (let r = 7; r >= 0; r--) {
+        let row = '', empty = 0;
+        for (let f = 0; f < 8; f++) {
+          const p = board[r][f];
+          if (p) { if (empty) { row += empty; empty = 0; } row += p; }
+          else empty++;
+        }
+        if (empty) row += empty;
+        out.push(row);
+      }
+      return out.join('/');
+    }
+    function applyUci(fen, uci) {
+      const parts = fen.split(/\s+/);
+      const board = fenToBoard(parts[0]);
+      const turn = parts[1];
+      let castling = parts[2];
+      let half = +parts[4], full = +parts[5];
+      const ff = uci.charCodeAt(0) - 97, fr = +uci[1] - 1;
+      const tf = uci.charCodeAt(2) - 97, tr = +uci[3] - 1;
+      const promo = uci[4];
+      const piece = board[fr][ff];
+      const target = board[tr][tf];
+      board[tr][tf] = promo ? (turn === 'w' ? promo.toUpperCase() : promo.toLowerCase()) : piece;
+      board[fr][ff] = null;
+      // Castling
+      if (piece && piece.toLowerCase() === 'k' && Math.abs(tf - ff) === 2) {
+        const kingSide = tf > ff;
+        board[fr][kingSide ? 5 : 3] = board[fr][kingSide ? 7 : 0];
+        board[fr][kingSide ? 7 : 0] = null;
+      }
+      // En passant capture
+      if (piece && piece.toLowerCase() === 'p' && ff !== tf && !target) {
+        board[fr][tf] = null;
+      }
+      // New ep target
+      let newEp = '-';
+      if (piece && piece.toLowerCase() === 'p' && Math.abs(tr - fr) === 2) {
+        newEp = String.fromCharCode(97 + tf) + ((fr + tr) / 2 + 1);
+      }
+      // Castling-rights bookkeeping for king/rook moves and rook captures
+      if (piece === 'K') castling = castling.replace(/[KQ]/g, '');
+      if (piece === 'k') castling = castling.replace(/[kq]/g, '');
+      if (piece === 'R' && fr === 0 && ff === 0) castling = castling.replace('Q', '');
+      if (piece === 'R' && fr === 0 && ff === 7) castling = castling.replace('K', '');
+      if (piece === 'r' && fr === 7 && ff === 0) castling = castling.replace('q', '');
+      if (piece === 'r' && fr === 7 && ff === 7) castling = castling.replace('k', '');
+      if (target === 'R' && tr === 0 && tf === 0) castling = castling.replace('Q', '');
+      if (target === 'R' && tr === 0 && tf === 7) castling = castling.replace('K', '');
+      if (target === 'r' && tr === 7 && tf === 0) castling = castling.replace('q', '');
+      if (target === 'r' && tr === 7 && tf === 7) castling = castling.replace('k', '');
+      if (!castling) castling = '-';
+      const newHalf = (piece && piece.toLowerCase() === 'p') || target ? 0 : half + 1;
+      const newFull = turn === 'b' ? full + 1 : full;
+      return `${boardToFen(board)} ${turn === 'w' ? 'b' : 'w'} ${castling} ${newEp} ${newHalf} ${newFull}`;
+    }
+
+    // ---- History access ----
+    function getFenAt(idx) {
+      if (idx < 0) return startFen;
+      if (idx >= moveHistory.length) idx = moveHistory.length - 1;
+      if (fenCache[idx]) return fenCache[idx];
+      // Walk forward from the deepest cached entry we have
+      let baseIdx = -1, fen = startFen;
+      for (let i = idx; i >= 0; i--) {
+        if (fenCache[i]) { baseIdx = i; fen = fenCache[i]; break; }
+      }
+      for (let i = baseIdx + 1; i <= idx; i++) {
+        fen = applyUci(fen, moveHistory[i]);
+        fenCache[i] = fen;
+      }
+      return fen;
+    }
+    function resetReplay(newStartFen) {
+      startFen    = newStartFen || START_FEN;
+      moveHistory = [];
+      fenCache    = [];
+      currentIdx  = -1;
+      liveMode    = true;
+    }
+
+    function renderEmptyBoard() {
+      const grid = $('board-grid');
+      grid.innerHTML = '';
+      const fileLabels = $('file-labels');
+      const rankLabels = $('rank-labels');
+      fileLabels.innerHTML = '';
+      rankLabels.innerHTML = '';
+      const files = ourColor === 'black' ? 'hgfedcba' : 'abcdefgh';
+      const ranks = ourColor === 'black' ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
+      for (const f of files) {
+        const d = document.createElement('div'); d.textContent = f; fileLabels.appendChild(d);
+      }
+      for (const r of ranks) {
+        const d = document.createElement('div'); d.textContent = r; rankLabels.appendChild(d);
+      }
+      // 64 squares — visual orientation: when we play black, ranks flipped.
+      for (let r = 0; r < 8; r++) {
+        for (let f = 0; f < 8; f++) {
+          // visual file/rank
+          const vf = ourColor === 'black' ? 7 - f : f;
+          const vr = ourColor === 'black' ? r : 7 - r;
+          const sq = document.createElement('div');
+          sq.className = 'square ' + (((vf + vr) % 2 === 0) ? 'dark' : 'light');
+          sq.dataset.sq = squareName(vf, vr);
+          grid.appendChild(sq);
+        }
+      }
+    }
+
+    function renderFen(fen) {
+      if (!fen) return;
+      const parts = fen.split(/\s+/);
+      const ranks = parts[0].split('/');
+      // ranks[0] = rank 8 from top
+      for (let r = 0; r < 8; r++) {
+        let file = 0;
+        for (const ch of ranks[r]) {
+          if (/\d/.test(ch)) { file += parseInt(ch, 10); continue; }
+          const visualRank = 7 - r;          // rank 8 → vr 7
+          const sqName = squareName(file, visualRank);
+          const sq = $('board-grid').querySelector(`.square[data-sq="${sqName}"]`);
+          if (sq) sq.textContent = PIECE_UNICODE[ch] || '';
+          file++;
+        }
+      }
+      // clear empty squares that were full before
+      $('board-grid').querySelectorAll('.square').forEach(sq => {
+        if (!sq.textContent) {} // already empty
+      });
+    }
+
+    function clearBoard() {
+      $('board-grid').querySelectorAll('.square').forEach(sq => sq.textContent = '');
+    }
+
+    function updateBoardMeta(turn, status, gameInfoLine) {
+      const dot = $('board-turn-dot');
+      dot.className = 'turn-dot ' + (turn === 'black' ? 'black' : 'white');
+      let label = (turn === 'black' ? 'Schwarz' : 'Weiß') + ' am Zug';
+      if (status && status !== 'ongoing') label = status;
+      $('board-turn-text').textContent = label;
+      $('board-game-info').textContent = gameInfoLine || '—';
+      // board-last-move is set by updateBoardMetaFromCurrent based on the
+      // history cursor — don't overwrite it here.
+    }
+
+    let lastGameStatus = '';
+    let lastOppName = '?';
+
+    async function pollGame() {
+      if (!boardOn || !trackedGid) return;
+      const tidChip = $('meta-tid').textContent;
+      if (!tidChip || !tidChip.startsWith('TID:')) return;
+      const tid = tidChip.slice(4);
+      const base = $('cfg-base').value.trim().replace(/\/$/, '');
+      try {
+        const r = await fetch(`${base}/api/tournament/${tid}/game/${trackedGid}`,
+                              { signal: AbortSignal.timeout(2000) });
+        if (!r.ok) return;
+        const g = await r.json();
+        // Append any new moves from the server-side authoritative list
+        const serverMoves = (g.moves || '').trim().split(/\s+/).filter(x => x);
+        if (serverMoves.length > moveHistory.length) {
+          for (let i = moveHistory.length; i < serverMoves.length; i++) {
+            moveHistory.push(serverMoves[i]);
+          }
+          // Anchor the cache: server-supplied FEN matches the latest move
+          if (g.fen) fenCache[moveHistory.length - 1] = g.fen;
+        }
+        // Track meta
+        lastGameStatus = g.status || 'ongoing';
+        const meId = ($('meta-bot').textContent || '').slice(4);
+        const opp = g.white && g.white.id === meId ? g.black : g.white;
+        lastOppName = opp ? opp.name : '?';
+        // In live mode, follow the latest move; otherwise leave currentIdx alone.
+        if (liveMode) currentIdx = moveHistory.length - 1;
+        renderAt(currentIdx);
+      } catch (_) { /* network blip; retry next tick */ }
+    }
+
+    function renderAt(idx) {
+      currentIdx = Math.max(-1, Math.min(idx, moveHistory.length - 1));
+      const fen = getFenAt(currentIdx);
+      clearBoard();
+      renderFen(fen);
+      // Last-move highlight: only when we're past startpos
+      if (currentIdx >= 0) {
+        const uci = moveHistory[currentIdx];
+        $('board-grid').querySelectorAll('.square').forEach(sq =>
+          sq.classList.remove('last-from', 'last-to'));
+        const fromSq = $('board-grid').querySelector(`.square[data-sq="${uci.slice(0,2)}"]`);
+        const toSq   = $('board-grid').querySelector(`.square[data-sq="${uci.slice(2,4)}"]`);
+        if (fromSq) fromSq.classList.add('last-from');
+        if (toSq)   toSq.classList.add('last-to');
+      } else {
+        $('board-grid').querySelectorAll('.square').forEach(sq =>
+          sq.classList.remove('last-from', 'last-to'));
+      }
+      updateBoardMetaFromCurrent();
+      updateNavUi();
+    }
+
+    function updateBoardMetaFromCurrent() {
+      // Turn after current move: parse FEN's "w" or "b"
+      const fen = getFenAt(currentIdx);
+      const turn = fen.split(/\s+/)[1] === 'b' ? 'black' : 'white';
+      const showStatus = (currentIdx === moveHistory.length - 1) ? lastGameStatus : 'ongoing';
+      const info = `${ourColor === 'white' ? 'Weiß' : 'Schwarz'} vs ${lastOppName}`;
+      updateBoardMeta(turn, showStatus, info);
+      const lastMv = currentIdx >= 0 ? moveHistory[currentIdx] : null;
+      $('board-last-move').textContent = lastMv || '—';
+    }
+
+    function updateNavUi() {
+      const total = moveHistory.length;
+      const cur = currentIdx + 1;  // 1-based for display; 0 = startpos
+      $('nav-pos').textContent = `${cur} / ${total}`;
+      $('nav-first').disabled = currentIdx <= -1;
+      $('nav-prev').disabled  = currentIdx <= -1;
+      $('nav-next').disabled  = currentIdx >= total - 1;
+      $('nav-last').disabled  = currentIdx >= total - 1;
+      const tag = $('nav-live');
+      tag.textContent = liveMode ? 'live' : 'pausiert';
+      tag.classList.toggle('paused', !liveMode);
+    }
+
+    // ---- Nav button bindings ----
+    function navTo(idx, leaveLiveMode) {
+      if (leaveLiveMode) liveMode = false;
+      renderAt(idx);
+      if (idx >= moveHistory.length - 1) liveMode = true;
+      updateNavUi();
+    }
+    $('nav-first').addEventListener('click', () => navTo(-1, true));
+    $('nav-prev').addEventListener('click',  () => navTo(currentIdx - 1, true));
+    $('nav-next').addEventListener('click',  () => navTo(currentIdx + 1, false));
+    $('nav-last').addEventListener('click',  () => { liveMode = true; navTo(moveHistory.length - 1, false); });
+    // Keyboard: ← / → / Home / End when board is active and focus is on body
+    document.addEventListener('keydown', (e) => {
+      if (!boardOn) return;
+      const t = document.activeElement?.tagName;
+      if (t === 'INPUT' || t === 'TEXTAREA') return;
+      if (e.key === 'ArrowLeft')  { navTo(currentIdx - 1, true);  e.preventDefault(); }
+      if (e.key === 'ArrowRight') { navTo(currentIdx + 1, false); e.preventDefault(); }
+      if (e.key === 'Home')       { navTo(-1, true);              e.preventDefault(); }
+      if (e.key === 'End')        { liveMode = true; navTo(moveHistory.length - 1, false); e.preventDefault(); }
+    });
+
+    function startPolling() {
+      if (pollTimer) return;
+      pollTimer = setInterval(pollGame, 1200);
+    }
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    // Hook into the log feed: extract gameStart (new game = reset history) and
+    // roundFinished (refresh result strip). Moves come from poll, not log.
+    function consumeLogForBoard(line) {
+      const gs = line.match(/gameStart\s+([a-f0-9]+)\s+as\s+(white|black)/i);
+      if (gs) {
+        const newGid = gs[1];
+        if (newGid !== trackedGid) {
+          trackedGid = newGid;
+          ourColor   = gs[2].toLowerCase();
+          resetReplay();           // wipe history for the new game
+          lastGameStatus = 'ongoing';
+          if (boardOn) {
+            renderEmptyBoard();
+            renderAt(-1);
+            pollGame();
+          }
+        }
+        return;
+      }
+      if (/roundFinished/.test(line) || /tournamentFinished/.test(line)) {
+        // Both events warrant a result-strip refresh.
+        const tid = ($('meta-tid').textContent || '').slice(4);
+        if (tid) refreshResultStrip(tid, /tournamentFinished/.test(line));
+      }
+    }
+
+    function setBoardVisible(on) {
+      boardOn = on;
+      const panel = $('board-panel');
+      panel.classList.toggle('shown', on);
+      const btn = $('btn-board-toggle');
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (on) {
+        renderEmptyBoard();
+        // If a game is already running, render the latest known position
+        // immediately so toggling-on mid-tournament doesn't show an empty board.
+        if (moveHistory.length > 0 || trackedGid) renderAt(moveHistory.length - 1);
+        startPolling();
+        pollGame();
+      } else {
+        stopPolling();
+      }
+    }
+    $('btn-board-toggle').addEventListener('click', () => setBoardVisible(!boardOn));
 
     // ---- bootstrap ----
     load();
