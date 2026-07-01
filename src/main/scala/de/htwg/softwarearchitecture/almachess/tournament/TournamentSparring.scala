@@ -46,28 +46,40 @@ final class TournamentSparring(
       val ev = line.parseJson.asJsObject.fields
       ev.get("type").collect { case JsString(v) => v } match
         case Some("gameStart") =>
-          val gid = ev.get("gameId").collect { case JsString(v) => v }.getOrElse("")
-          val rnd = ev.get("round").collect { case JsNumber(n) => n.toInt }.getOrElse(0)
-          if gid.nonEmpty && sessions.add(gid) then onGameStart(gid, rnd)
+          val gid   = ev.get("gameId").collect { case JsString(v) => v }.getOrElse("")
+          val rnd   = ev.get("round").collect { case JsNumber(n) => n.toInt }.getOrElse(0)
+          val color = ev.get("color").collect { case JsString(v) => v }.getOrElse("")
+          val evBot = ev.get("botId").collect { case JsString(v) => v }
+          if gid.nonEmpty then onGameStart(gid, rnd, color, evBot)
         case Some("tournamentFinished") => done.trySuccess(())
         case _ => ()
     catch case NonFatal(_) => ()
 
-  private def onGameStart(gid: String, rnd: Int): Unit =
-    client.getRound(tournamentId, rnd).foreach {
-      case Right(pairings) =>
-        val ours = pairings.find(_.gameIds.contains(gid)).flatMap { p =>
-          if p.white == botId then Some("white")
-          else if p.black == botId then Some("black")
-          else None
+  private def onGameStart(gid: String, rnd: Int, color: String, evBot: Option[String]): Unit =
+    // Fast path: server-provided botId in gameStart (post-commit 756d64c).
+    // Legacy path: fall back to pairing lookup by round when botId missing.
+    evBot match
+      case Some(id) =>
+        if id != botId then return
+        if !sessions.add(gid) then return
+        log.info(s"[sparring] play $gid as $color")
+        playGame(gid, color)
+      case None =>
+        if !sessions.add(gid) then return
+        client.getRound(tournamentId, rnd).foreach {
+          case Right(pairings) =>
+            val ours = pairings.find(_.gameIds.contains(gid)).flatMap { p =>
+              if p.white == botId then Some("white")
+              else if p.black == botId then Some("black")
+              else None
+            }
+            ours match
+              case Some(c) =>
+                log.info(s"[sparring] play $gid as $c (via pairing)")
+                playGame(gid, c)
+              case None => sessions.remove(gid)
+          case Left(_) => sessions.remove(gid)
         }
-        ours match
-          case Some(color) =>
-            log.info(s"[sparring] play $gid as $color")
-            playGame(gid, color)
-          case None => sessions.remove(gid)
-      case Left(_) => sessions.remove(gid)
-    }
 
   private def playGame(gid: String, ourColor: String): Unit =
     client.getGameState(tournamentId, gid).foreach {

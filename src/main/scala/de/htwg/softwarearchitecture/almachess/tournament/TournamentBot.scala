@@ -99,29 +99,43 @@ final class TournamentBot(
       log.info(s"[tournament] bad event line: ${ex.getMessage} | $line")
 
   private def onGameStart(ev: Map[String, JsValue]): Unit =
-    val gid   = ev.get("gameId").collect { case JsString(v) => v }.getOrElse("")
-    val round = ev.get("round").collect { case JsNumber(n) => n.toInt }.getOrElse(0)
-    if gid.isEmpty || !sessions.add(gid) then return  // dedup: ignore second gameStart for this gameId
-    // Look up the round to see which colour we play in this game.
-    client.getRound(tournamentId, round).foreach {
-      case Right(pairings) =>
-        val ours = pairings.find(_.gameIds.contains(gid))
-        ours match
-          case Some(p) if p.white == botId =>
-            log.info(s"[tournament] gameStart $gid as white")
-            new TournamentSession(client, aiClient, cfg, log, token, tournamentId, gid, "white").start()
-          case Some(p) if p.black == botId =>
-            log.info(s"[tournament] gameStart $gid as black")
-            new TournamentSession(client, aiClient, cfg, log, token, tournamentId, gid, "black").start()
-          case _ =>
-            // Not our game — drop the dedup gate so a later event for the
-            // same gid (if any) won't be silently skipped.
+    val gid    = ev.get("gameId").collect { case JsString(v) => v }.getOrElse("")
+    val round  = ev.get("round").collect { case JsNumber(n) => n.toInt }.getOrElse(0)
+    val color  = ev.get("color").collect { case JsString(v) => v }.getOrElse("")
+    val evBot  = ev.get("botId").collect { case JsString(v) => v }
+    if gid.isEmpty then return
+
+    // Fast path: server includes botId in gameStart (post-commit 756d64c).
+    // Each event is per-bot per-colour, so an exact botId match is our game
+    // and no pairing lookup is needed. Dedup on gid is a safety belt in case
+    // the server ever re-emits.
+    evBot match
+      case Some(id) =>
+        if id != botId then return
+        if !sessions.add(gid) then return
+        log.info(s"[tournament] gameStart $gid as $color")
+        new TournamentSession(client, aiClient, cfg, log, token, tournamentId, gid, color).start()
+      case None =>
+        // Legacy path: pre-756d64c the event omitted botId and was broadcast
+        // to every subscriber. We used to fetch the pairing to figure out our
+        // colour. Kept so the bot still works against older server builds.
+        if !sessions.add(gid) then return
+        client.getRound(tournamentId, round).foreach {
+          case Right(pairings) =>
+            pairings.find(_.gameIds.contains(gid)) match
+              case Some(p) if p.white == botId =>
+                log.info(s"[tournament] gameStart $gid as white (via pairing)")
+                new TournamentSession(client, aiClient, cfg, log, token, tournamentId, gid, "white").start()
+              case Some(p) if p.black == botId =>
+                log.info(s"[tournament] gameStart $gid as black (via pairing)")
+                new TournamentSession(client, aiClient, cfg, log, token, tournamentId, gid, "black").start()
+              case _ =>
+                sessions.remove(gid)
+                log.info(s"[tournament] gameStart $gid not ours, skipping")
+          case Left(err) =>
             sessions.remove(gid)
-            log.info(s"[tournament] gameStart $gid not ours, skipping")
-      case Left(err) =>
-        sessions.remove(gid)
-        log.info(s"[tournament] could not load round $round: $err")
-    }
+            log.info(s"[tournament] could not load round $round: $err")
+        }
 
   private def rawIntField(ev: Map[String, JsValue], name: String): String =
     ev.get(name).collect { case JsNumber(n) => n.toString }.getOrElse("?")
